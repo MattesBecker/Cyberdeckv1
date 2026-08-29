@@ -42,6 +42,7 @@ python3 app.py --no-display
 - `s` = runter
 - `Enter` = auswählen
 - `b` = zurück
+- `d` = geöffnete Notiz löschen
 - `q` = beenden
 
 Die Eingabe blockiert bis zum nächsten Befehl. Dadurch entsteht keine
@@ -55,12 +56,17 @@ aktualisiert.
 - `display.py`: Rendering und einziger Zugriff auf die Waveshare-Library
 - `menu.py`: hardwareunabhängiger Navigationszustand
 - `input_cli.py`: blockierende SSH-/CLI-Eingabe
-- `pages/`: kleine, unabhängige Platzhalterseiten
-- `data/`: spätere Notizen und Aufgaben
+- `notes_store.py`: UTF-8-Dateispeicher für einzelne Markdown-Notizen
+- `pages/`: kleine, unabhängige UI-Seiten
+- `data/`: lokale Notizen und spätere Aufgaben
+
+Notes werden unter `data/notes/` als `YYYYMMDD_HHMMSS.md` gespeichert. Der
+Eintrag `NEW` fragt Titel und Text im Terminal ab; eine einzelne Zeile mit `.`
+beendet die Texteingabe. Geöffnete Notizen können nach Bestätigung mit `d`
+gelöscht werden.
 
 ## Spätere Erweiterungen
 
-- Notes
 - Tasks
 - Hardwarebuttons
 - Offline Library

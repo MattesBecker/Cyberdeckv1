@@ -1,7 +1,8 @@
 import importlib
+import logging
 import sys
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -14,6 +15,7 @@ from config import (
 
 
 MenuItem = Tuple[str, str]
+logger = logging.getLogger(__name__)
 
 
 class DisplayError(RuntimeError):
@@ -28,10 +30,15 @@ class EpaperDisplay:
         self.width = DISPLAY_WIDTH
         self.height = DISPLAY_HEIGHT
         self.last_frame: Optional[bytes] = None
+        self.partial_refresh_count = 0
+        self.partial_refresh_limit = 10
+        self.partial_ready = False
+        self.body_line_count = 5
         self._epd = None
         self._initialized = False
         self._font = self._load_font(11)
         self._title_font = self._load_font(12, bold=True)
+        self._measure_draw = ImageDraw.Draw(self._new_image())
 
     @staticmethod
     def _load_font(size: int, bold: bool = False):
@@ -102,7 +109,7 @@ class EpaperDisplay:
                 preview_lines.append(line)
                 y += 16
 
-            return self.refresh(image, preview_lines)
+            return self.refresh(image, preview_lines=preview_lines)
         except DisplayError:
             raise
         except Exception as exc:
@@ -118,21 +125,30 @@ class EpaperDisplay:
         try:
             image = self._new_image()
             draw = ImageDraw.Draw(image)
-            draw.text((5, 4), title, font=self._title_font, fill=0)
+            visible_title = self.truncate_text(title, font=self._title_font)
+            visible_lines = [
+                self.truncate_text(line)
+                for line in list(lines)[: self.body_line_count]
+            ]
+            draw.text((5, 4), visible_title, font=self._title_font, fill=0)
 
             y = 28
-            for line in lines:
+            for line in visible_lines:
                 draw.text((5, y), line, font=self._font, fill=0)
                 y += 16
 
-            preview_lines = [title, ""] + list(lines)
+            preview_lines = [visible_title, ""] + visible_lines
             if footer:
+                visible_footer = self.truncate_text(footer)
                 draw.text(
-                    (5, self.height - 16), footer, font=self._font, fill=0
+                    (5, self.height - 16),
+                    visible_footer,
+                    font=self._font,
+                    fill=0,
                 )
-                preview_lines.extend(("", footer))
+                preview_lines.extend(("", visible_footer))
 
-            return self.refresh(image, preview_lines)
+            return self.refresh(image, preview_lines=preview_lines)
         except DisplayError:
             raise
         except Exception as exc:
@@ -145,10 +161,147 @@ class EpaperDisplay:
     ) -> bool:
         return self.render_text(title, lines, footer)
 
+    def truncate_text(
+        self,
+        text: str,
+        max_width: Optional[int] = None,
+        font=None,
+    ) -> str:
+        """Fit one line to the display using a simple ASCII ellipsis."""
+        available_width = max_width or (self.width - 10)
+        selected_font = font or self._font
+        if self._text_width(text, selected_font) <= available_width:
+            return text
+
+        suffix = "..."
+        low = 0
+        high = len(text)
+        while low < high:
+            middle = (low + high + 1) // 2
+            candidate = text[:middle].rstrip() + suffix
+            if self._text_width(candidate, selected_font) <= available_width:
+                low = middle
+            else:
+                high = middle - 1
+        return text[:low].rstrip() + suffix
+
+    def wrap_text(
+        self, text: str, max_width: Optional[int] = None
+    ) -> List[str]:
+        """Wrap plain text to the pixel width of the body font."""
+        available_width = max_width or (self.width - 10)
+        wrapped: List[str] = []
+
+        for paragraph in text.split("\n"):
+            words = paragraph.split()
+            if not words:
+                wrapped.append("")
+                continue
+
+            current = ""
+            for word in words:
+                parts = self._split_long_word(word, available_width)
+                for part_index, part in enumerate(parts):
+                    candidate = (current + " " + part).strip()
+                    if self._text_width(candidate, self._font) <= available_width:
+                        current = candidate
+                        continue
+
+                    if current:
+                        wrapped.append(current)
+                    current = part
+
+                    if part_index < len(parts) - 1:
+                        wrapped.append(current)
+                        current = ""
+            if current:
+                wrapped.append(current)
+
+        return wrapped or [""]
+
+    def _split_long_word(self, word: str, max_width: int) -> List[str]:
+        if self._text_width(word, self._font) <= max_width:
+            return [word]
+
+        parts = []
+        remaining = word
+        while remaining:
+            low = 1
+            high = len(remaining)
+            while low < high:
+                middle = (low + high + 1) // 2
+                if self._text_width(remaining[:middle], self._font) <= max_width:
+                    low = middle
+                else:
+                    high = middle - 1
+            parts.append(remaining[:low])
+            remaining = remaining[low:]
+        return parts
+
+    def _text_width(self, text: str, font) -> int:
+        box = self._measure_draw.textbbox((0, 0), text, font=font)
+        return box[2] - box[0]
+
     def refresh(
-        self, image: Image.Image, preview_lines: Optional[Sequence[str]] = None
+        self,
+        image: Image.Image,
+        mode: str = "auto",
+        preview_lines: Optional[Sequence[str]] = None,
     ) -> bool:
-        """Show a full frame. Return False when it matches the last frame."""
+        """Refresh a changed frame using the requested strategy.
+
+        Identical frames are deliberately skipped in every mode, including an
+        explicit full refresh, because no visible pixels would change.
+        """
+        if mode not in ("auto", "full", "partial"):
+            raise ValueError(
+                "Invalid refresh mode '{0}'; use auto, full, or partial.".format(
+                    mode
+                )
+            )
+
+        monochrome, frame_data = self._prepare_frame(image)
+        if frame_data == self.last_frame:
+            logger.debug("Skipping refresh: frame unchanged")
+            return False
+
+        if mode == "full":
+            return self._perform_full_refresh(
+                monochrome, frame_data, preview_lines
+            )
+        if mode == "partial":
+            return self._perform_partial_refresh(
+                monochrome, frame_data, preview_lines
+            )
+
+        if (
+            self.last_frame is None
+            or self.partial_refresh_count >= self.partial_refresh_limit
+        ):
+            return self._perform_full_refresh(
+                monochrome, frame_data, preview_lines
+            )
+        return self._perform_partial_refresh(
+            monochrome, frame_data, preview_lines
+        )
+
+    def refresh_full(
+        self,
+        image: Image.Image,
+        preview_lines: Optional[Sequence[str]] = None,
+    ) -> bool:
+        """Request a full refresh; unchanged frames are still skipped."""
+        return self.refresh(image, mode="full", preview_lines=preview_lines)
+
+    def refresh_partial(
+        self,
+        image: Image.Image,
+        preview_lines: Optional[Sequence[str]] = None,
+    ) -> bool:
+        """Request a partial refresh with a safe full-refresh fallback."""
+        return self.refresh(image, mode="partial", preview_lines=preview_lines)
+
+    def _prepare_frame(self, image: Image.Image) -> Tuple[Image.Image, bytes]:
         if not self._initialized:
             raise DisplayError("Display must be initialized before rendering.")
         if image.size != (self.width, self.height):
@@ -158,27 +311,107 @@ class EpaperDisplay:
                 )
             )
 
-        monochrome = image.convert("1")
-        frame_data = monochrome.tobytes()
-        if frame_data == self.last_frame:
-            return False
+        monochrome = image if image.mode == "1" else image.convert("1")
+        return monochrome, monochrome.tobytes()
+
+    def _perform_full_refresh(
+        self,
+        image: Image.Image,
+        frame_data: bytes,
+        preview_lines: Optional[Sequence[str]],
+    ) -> bool:
+        logger.debug("Full refresh")
 
         if self.enabled:
             if self._epd is None:
                 raise DisplayError("E-paper hardware is not available.")
             try:
-                # The V3 driver converts this 250x122 landscape image to its
+                # The V3 driver rotates this 250x122 landscape frame into its
                 # native 122x250 buffer orientation.
-                buffer = self._epd.getbuffer(monochrome)
+                buffer = self._epd.getbuffer(image)
                 self._epd.display(buffer)
             except Exception as exc:
+                self.partial_ready = False
                 raise DisplayError(
-                    "Failed to refresh e-paper display: {0}".format(exc)
+                    "Failed to perform full e-paper refresh: {0}".format(exc)
                 ) from exc
+
+            # display() has successfully made this frame visible. The V3
+            # baseline call then mirrors it into both display RAM planes, as
+            # required by Waveshare before displayPartial().
+            self.last_frame = frame_data
+            self.partial_refresh_count = 0
+            self.partial_ready = False
+            try:
+                self._epd.displayPartBaseImage(buffer)
+            except Exception as exc:
+                raise DisplayError(
+                    "Full refresh succeeded, but preparing the V3 partial "
+                    "refresh baseline failed: {0}".format(exc)
+                ) from exc
+            self.partial_ready = True
         else:
             self._print_preview(preview_lines or ("[image frame]",))
+            self.last_frame = frame_data
+            self.partial_refresh_count = 0
+            self.partial_ready = True
+
+        return True
+
+    def _perform_partial_refresh(
+        self,
+        image: Image.Image,
+        frame_data: bytes,
+        preview_lines: Optional[Sequence[str]],
+    ) -> bool:
+        if self.last_frame is None or not self.partial_ready:
+            logger.warning(
+                "Partial refresh baseline unavailable, using full refresh"
+            )
+            return self._perform_full_refresh(
+                image, frame_data, preview_lines
+            )
+
+        if not self.enabled:
+            self._print_preview(preview_lines or ("[image frame]",))
+            self.last_frame = frame_data
+            self.partial_refresh_count += 1
+            logger.debug(
+                "Partial refresh %d/%d",
+                self.partial_refresh_count,
+                self.partial_refresh_limit,
+            )
+            return True
+
+        if self._epd is None:
+            raise DisplayError("E-paper hardware is not available.")
+
+        try:
+            buffer = self._epd.getbuffer(image)
+            self._epd.displayPartial(buffer)
+        except Exception as partial_error:
+            self.partial_ready = False
+            logger.warning(
+                "Partial refresh failed, falling back to full: %s",
+                partial_error,
+            )
+            try:
+                return self._perform_full_refresh(
+                    image, frame_data, preview_lines
+                )
+            except DisplayError as full_error:
+                raise DisplayError(
+                    "Partial refresh failed ({0}); full-refresh fallback "
+                    "also failed ({1}).".format(partial_error, full_error)
+                ) from partial_error
 
         self.last_frame = frame_data
+        self.partial_refresh_count += 1
+        logger.debug(
+            "Partial refresh %d/%d",
+            self.partial_refresh_count,
+            self.partial_refresh_limit,
+        )
         return True
 
     @staticmethod
@@ -190,7 +423,9 @@ class EpaperDisplay:
 
     def clear(self) -> bool:
         """Clear the screen, unless it is already blank."""
-        return self.refresh(self._new_image(), ("[blank]",))
+        return self.refresh_full(
+            self._new_image(), preview_lines=("[blank]",)
+        )
 
     def sleep(self) -> None:
         """Put initialized hardware into deep sleep."""
