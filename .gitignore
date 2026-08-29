@@ -1,4 +1,9 @@
 __pycache__/
-*.py[cod]
-.DS_Store
+*.pyc
 .venv/
+venv/
+.DS_Store
+
+# Laufzeit-/Benutzerdaten
+data/notes/*
+!data/notes/.gitkeep
