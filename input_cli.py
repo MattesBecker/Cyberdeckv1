@@ -48,3 +48,21 @@ def confirm_note_delete(title: str) -> bool:
     except EOFError:
         return False
     return answer in ("y", "yes")
+
+
+def read_task_title() -> Optional[str]:
+    """Read one task title from the terminal."""
+    try:
+        return input("Task title: ").strip()
+    except EOFError:
+        print("Task creation cancelled.")
+        return None
+
+
+def confirm_task_delete(title: str) -> bool:
+    """Ask for an explicit terminal confirmation before task deletion."""
+    try:
+        answer = input("Delete task '{0}'? y/n: ".format(title)).strip().lower()
+    except EOFError:
+        return False
+    return answer in ("y", "yes")

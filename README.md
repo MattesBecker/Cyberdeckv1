@@ -42,7 +42,7 @@ python3 app.py --no-display
 - `s` = runter
 - `Enter` = auswählen
 - `b` = zurück
-- `d` = geöffnete Notiz löschen
+- `d` = geöffnete Notiz oder ausgewählte Aufgabe löschen
 - `q` = beenden
 
 Die Eingabe blockiert bis zum nächsten Befehl. Dadurch entsteht keine
@@ -57,17 +57,23 @@ aktualisiert.
 - `menu.py`: hardwareunabhängiger Navigationszustand
 - `input_cli.py`: blockierende SSH-/CLI-Eingabe
 - `notes_store.py`: UTF-8-Dateispeicher für einzelne Markdown-Notizen
+- `tasks_store.py`: atomischer JSON-Dateispeicher für Aufgaben
 - `pages/`: kleine, unabhängige UI-Seiten
-- `data/`: lokale Notizen und spätere Aufgaben
+- `data/`: lokale Notizen und Aufgaben
 
 Notes werden unter `data/notes/` als `YYYYMMDD_HHMMSS.md` gespeichert. Der
-Eintrag `NEW` fragt Titel und Text im Terminal ab; eine einzelne Zeile mit `.`
-beendet die Texteingabe. Geöffnete Notizen können nach Bestätigung mit `d`
-gelöscht werden.
+Eintrag `+ New note` fragt Titel und Text im Terminal ab; eine einzelne Zeile
+mit `.` beendet die Texteingabe. Geöffnete Notizen können nach Bestätigung mit
+`d` gelöscht werden.
+
+Tasks werden lokal in `data/tasks.json` gespeichert. `+ New task` fragt den
+Titel im Terminal ab. Bei vorhandenen Aufgaben schaltet `Enter` zwischen
+`[ ]` und `[x]` um; `d` löscht die ausgewählte Aufgabe nach Bestätigung.
+`tasks.example.json` ist die versionierte Vorlage, während echte Laufzeitdaten
+von Git ignoriert werden.
 
 ## Spätere Erweiterungen
 
-- Tasks
 - Hardwarebuttons
 - Offline Library
 - Sync

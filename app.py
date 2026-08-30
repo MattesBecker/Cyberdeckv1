@@ -5,11 +5,19 @@ from typing import Dict, Optional, Sequence
 
 from config import MENU_ITEMS, NOTES_DIR, TASKS_FILE
 from display import DisplayError, EpaperDisplay
-from input_cli import confirm_note_delete, read_command, read_note_input
+from input_cli import (
+    confirm_note_delete,
+    confirm_task_delete,
+    read_command,
+    read_note_input,
+    read_task_title,
+)
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
 from pages.notes import NotesPage
+from pages.tasks import TasksPage
+from tasks_store import TasksStore, TasksStoreError
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -24,9 +32,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def setup_data() -> None:
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
-    TASKS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not TASKS_FILE.exists():
-        TASKS_FILE.write_text("[]\n", encoding="utf-8")
 
 
 def render_current_view(
@@ -62,7 +67,7 @@ def handle_notes_command(
             title, text = note_input
             notes_page.add_note(title, text)
             return True
-        return result == "opened"
+        return result in ("opened", "changed")
     if command == "delete":
         note = notes_page.current_note
         if note is None or notes_page.mode != notes_page.NOTE_MODE:
@@ -73,6 +78,37 @@ def handle_notes_command(
     if command == "back":
         if notes_page.back_to_list():
             return True
+        return menu.back()
+    return False
+
+
+def handle_tasks_command(
+    command: str, tasks_page: TasksPage, menu: MenuController
+) -> bool:
+    if command == "up":
+        return tasks_page.move_up()
+    if command == "down":
+        return tasks_page.move_down()
+    if command == "select":
+        result = tasks_page.select()
+        if result == "new":
+            title = read_task_title()
+            if title is None:
+                return False
+            if not title:
+                print("Task title must not be empty.")
+                return False
+            tasks_page.add_task(title)
+            return True
+        return result == "changed"
+    if command == "delete":
+        task = tasks_page.selected_task
+        if task is None:
+            return False
+        if not confirm_task_delete(task.title):
+            return False
+        return tasks_page.delete_selected_task()
+    if command == "back":
         return menu.back()
     return False
 
@@ -90,6 +126,12 @@ def handle_command(
             except NotesStoreError as exc:
                 print("Notes error: {0}".format(exc), file=sys.stderr)
                 return False
+        if isinstance(page, TasksPage):
+            try:
+                return handle_tasks_command(command, page, menu)
+            except TasksStoreError as exc:
+                print("Tasks error: {0}".format(exc), file=sys.stderr)
+                return False
         if command == "back":
             return menu.back()
         return False
@@ -104,6 +146,15 @@ def handle_command(
             notes_page = pages[NotesPage.key]
             if isinstance(notes_page, NotesPage):
                 notes_page.open_list()
+        elif changed and menu.current_view == TasksPage.key:
+            tasks_page = pages[TasksPage.key]
+            if isinstance(tasks_page, TasksPage):
+                try:
+                    tasks_page.open_list()
+                except TasksStoreError as exc:
+                    print("Tasks error: {0}".format(exc), file=sys.stderr)
+                    menu.back()
+                    return False
         return changed
     if command == "back":
         return menu.back()
@@ -121,7 +172,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         display.initialize()
 
         menu = MenuController(MENU_ITEMS)
-        pages = create_pages(NotesStore(NOTES_DIR))
+        tasks_store = TasksStore(TASKS_FILE)
+        tasks_store.ensure_file()
+        pages = create_pages(NotesStore(NOTES_DIR), tasks_store)
         render_current_view(display, menu, pages)
 
         while True:
@@ -137,6 +190,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("\nStopping Cyberdeck.")
     except NotesStoreError as exc:
         print("Notes error: {0}".format(exc), file=sys.stderr)
+        exit_code = 1
+    except TasksStoreError as exc:
+        print("Tasks error: {0}".format(exc), file=sys.stderr)
         exit_code = 1
     except DisplayError as exc:
         print("Display error: {0}".format(exc), file=sys.stderr)

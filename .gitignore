@@ -7,3 +7,5 @@ venv/
 # Laufzeit-/Benutzerdaten
 data/notes/*
 !data/notes/.gitkeep
+data/tasks.json*
+data/.tasks.*.tmp

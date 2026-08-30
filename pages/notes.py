@@ -24,6 +24,7 @@ class NotesPage(BasePage):
         self.current_note: Optional[Note] = None
         self.page_index = 0
         self._row_count = 5
+        self._text_row_count = 4
         self._wrapped_text: List[str] = []
         self.reload()
 
@@ -43,7 +44,7 @@ class NotesPage(BasePage):
         if preferred_filename:
             for index, note in enumerate(self.notes):
                 if note.filename == preferred_filename:
-                    self.selected_index = index
+                    self.selected_index = index + 1
                     break
             else:
                 self.selected_index = min(old_index, len(self.notes))
@@ -66,7 +67,7 @@ class NotesPage(BasePage):
 
     def move_down(self) -> bool:
         if self.mode == self.NOTE_MODE:
-            page_count = self._page_count(self._row_count)
+            page_count = self._page_count(self._text_row_count)
             if self.page_index + 1 >= page_count:
                 return False
             self.page_index += 1
@@ -81,10 +82,14 @@ class NotesPage(BasePage):
     def select(self) -> str:
         if self.mode == self.NOTE_MODE:
             return "unchanged"
-        if self.selected_index == len(self.notes):
+        if self.selected_index == 0:
             return "new"
 
-        self.current_note = self.notes[self.selected_index]
+        selected_note = self.notes[self.selected_index - 1]
+        self.current_note = self.store.load_note(selected_note.filename)
+        if self.current_note is None:
+            self.reload()
+            return "changed"
         self.mode = self.NOTE_MODE
         self.page_index = 0
         self._wrapped_text = []
@@ -128,7 +133,7 @@ class NotesPage(BasePage):
     def _render_list(self, display: "EpaperDisplay") -> bool:
         self._row_count = display.body_line_count
         self._keep_selection_visible(self._row_count)
-        labels = [note.title for note in self.notes] + ["NEW"]
+        labels = ["+ New note"] + [note.title for note in self.notes]
         end = min(self.list_offset + self._row_count, len(labels))
         lines = []
         for index in range(self.list_offset, end):
@@ -145,17 +150,17 @@ class NotesPage(BasePage):
         if note is None:
             return self._render_list(display)
 
-        self._row_count = display.body_line_count
+        self._text_row_count = max(1, display.body_line_count - 1)
         self._wrapped_text = display.wrap_text(note.text or "(empty note)")
-        page_count = self._page_count(self._row_count)
+        page_count = self._page_count(self._text_row_count)
         self.page_index = min(self.page_index, page_count - 1)
-        start = self.page_index * self._row_count
-        end = start + self._row_count
-        lines = self._wrapped_text[start:end]
+        start = self.page_index * self._text_row_count
+        end = start + self._text_row_count
+        lines = [note.title] + self._wrapped_text[start:end]
         footer = "{0}/{1}  w/s  d:del  b".format(
             self.page_index + 1, page_count
         )
-        return display.render_page(note.title, lines, footer)
+        return display.render_page(self.title, lines, footer)
 
     def _keep_selection_visible(self, row_count: int) -> None:
         if self.selected_index < self.list_offset:

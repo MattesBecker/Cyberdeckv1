@@ -1,17 +1,19 @@
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 FILENAME_PATTERN = re.compile(r"^\d{8}_\d{6}\.md$")
 TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 CREATED_FORMAT = "%Y-%m-%d %H:%M:%S"
+logger = logging.getLogger(__name__)
 
 
 class NotesStoreError(RuntimeError):
-    """Raised when a note cannot be stored or deleted safely."""
+    """Raised when a note cannot be accessed safely."""
 
 
 @dataclass(frozen=True)
@@ -47,15 +49,21 @@ class NotesStore:
 
         notes = []
         for path in paths:
-            if (
-                path.is_symlink()
-                or not path.is_file()
-                or FILENAME_PATTERN.fullmatch(path.name) is None
-            ):
+            if path.suffix.lower() != ".md":
+                continue
+            if path.is_symlink():
+                logger.warning("Skipping symbolic-link note: %s", path.name)
+                continue
+            if not path.is_file():
+                continue
+            if FILENAME_PATTERN.fullmatch(path.name) is None:
+                logger.warning("Skipping invalid note filename: %s", path.name)
                 continue
             note = self._read_note(path)
             if note is not None:
                 notes.append(note)
+            else:
+                logger.warning("Skipping invalid note file: %s", path.name)
 
         # Timestamp filenames sort chronologically without extra filesystem reads.
         notes.sort(key=lambda note: note.filename, reverse=True)
@@ -91,12 +99,31 @@ class NotesStore:
 
         raise NotesStoreError("Could not find a free timestamp filename.")
 
-    def delete_note(self, note: Note) -> None:
+    def load_note(self, identifier: Union[Note, str]) -> Optional[Note]:
+        """Load one safe timestamp-named note, or return None if unavailable."""
         self.ensure_directory()
-        if FILENAME_PATTERN.fullmatch(note.filename) is None:
+        filename = self._filename_from_identifier(identifier)
+        if FILENAME_PATTERN.fullmatch(filename) is None:
+            logger.warning("Refusing to load invalid note filename: %s", filename)
+            return None
+
+        path = self.notes_dir / filename
+        if path.is_symlink() or not path.is_file():
+            logger.warning("Note file is unavailable: %s", filename)
+            return None
+
+        note = self._read_note(path)
+        if note is None:
+            logger.warning("Skipping invalid note file: %s", filename)
+        return note
+
+    def delete_note(self, identifier: Union[Note, str]) -> None:
+        self.ensure_directory()
+        filename = self._filename_from_identifier(identifier)
+        if FILENAME_PATTERN.fullmatch(filename) is None:
             raise NotesStoreError("Refusing to delete an invalid note filename.")
 
-        path = self.notes_dir / note.filename
+        path = self.notes_dir / filename
         if path.is_symlink():
             raise NotesStoreError("Refusing to delete a symbolic link.")
         try:
@@ -105,6 +132,14 @@ class NotesStore:
             raise NotesStoreError("The note no longer exists.")
         except OSError as exc:
             raise NotesStoreError("Could not delete note: {0}".format(exc)) from exc
+
+    @staticmethod
+    def _filename_from_identifier(identifier: Union[Note, str]) -> str:
+        if isinstance(identifier, Note):
+            return identifier.filename
+        if isinstance(identifier, str):
+            return identifier
+        raise NotesStoreError("Note identifier must be a filename or Note.")
 
     @staticmethod
     def _serialize(created: datetime, title: str, text: str) -> str:
