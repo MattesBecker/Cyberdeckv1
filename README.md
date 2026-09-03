@@ -112,16 +112,18 @@ von Git ignoriert werden.
 
 ## Terminal
 
-Terminal V1 führt einzelne, nicht-interaktive Befehle aus. `Enter` öffnet die
-Eingabe über die aktive CLI- oder CardKB-Quelle. Die Befehlszeile wird mit
+Terminal V1 führt einzelne, nicht-interaktive Befehle aus. Nach dem Öffnen kann
+über die aktive CLI- oder CardKB-Quelle direkt getippt werden; `Enter` führt
+den sichtbaren Befehl aus. Die Befehlszeile wird mit
 `shlex.split()` zerlegt und ohne Shell, ohne Eingabe-Weiterleitung und mit zehn
 Sekunden Timeout gestartet. Pipes, Umleitungen, Shell-Expansion, `sudo`-Prompts
 und interaktive Programme werden nicht emuliert.
 
 Standardausgabe und Fehlerausgabe erscheinen als umbrechbarer Klartext auf dem
-Display. Mit `w`/`s` oder Pfeil hoch/runter wird seitenweise geblättert;
-`Enter` startet die nächste Eingabe und `b`/`Esc` kehrt ins Hauptmenü zurück.
-Im leeren Terminal-Prompt wählen hoch/runter einen der letzten 20 lokal
+Display. In der Ausgabe wird mit `w`/`s` oder Pfeil hoch/runter seitenweise
+geblättert; `Enter` startet die nächste Eingabe und `b`/`Esc` kehrt ins
+Hauptmenü zurück. Im Terminal-Prompt wählen die Pfeile hoch/runter einen der
+letzten 20 lokal
 gespeicherten Befehle zur erneuten Ausführung aus. Die History-Datei unter
 `data/terminal_history.txt` wird nicht versioniert.
 

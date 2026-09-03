@@ -4,7 +4,19 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from input_cli import CLIInputSource
+from input_common import (
+    EVENT_BACKSPACE,
+    EVENT_CHARACTER,
+    EVENT_ENTER,
+    EVENT_ESCAPE,
+    EVENT_TEXT,
+    EVENT_UP,
+    InputEvent,
+    command_for_event,
+)
 from pages.terminal import TerminalPage
 from services import CommandResult, TerminalService
 from terminal_history import TerminalHistoryStore
@@ -186,6 +198,46 @@ class TerminalPageTest(unittest.TestCase):
         self.assertTrue(self.page.move_down())
         self.assertIsNone(self.page.selected_history_command)
 
+    def test_cardkb_style_events_edit_and_execute_visible_command(self):
+        self.page.open_terminal()
+        for character in "echo hello":
+            action = self.page.handle_event(
+                InputEvent(EVENT_CHARACTER, character=character)
+            )
+            self.assertEqual(action, "changed")
+
+        self.page.render(self.display)
+        self.assertIn("$ echo hello", "\n".join(self.display.last[1]))
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_BACKSPACE)), "changed"
+        )
+        self.assertEqual(self.page.command_buffer, "echo hell")
+        self.page.handle_event(
+            InputEvent(EVENT_CHARACTER, character="o")
+        )
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_ENTER)), "changed"
+        )
+        self.assertEqual(self.service.commands, ["echo hello"])
+        self.assertEqual(self.page.mode, self.page.OUTPUT_MODE)
+
+    def test_escape_returns_back_from_prompt(self):
+        self.page.open_terminal()
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_ESCAPE)), "back"
+        )
+
+    def test_history_can_be_selected_with_input_event(self):
+        self.history.add("uname -a")
+        self.page.open_terminal()
+
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_UP)), "changed"
+        )
+        self.assertEqual(self.page.command_buffer, "uname -a")
+        self.page.handle_event(InputEvent(EVENT_ENTER))
+        self.assertEqual(self.service.commands, ["uname -a"])
+
     def test_run_command_shows_stdout_stderr_and_saves_history(self):
         self.service.stdout = "hello\n"
         self.service.stderr = "warning\n"
@@ -217,6 +269,34 @@ class TerminalPageTest(unittest.TestCase):
             self.page.render(self.display)
         self.assertEqual(self.display.wrap_count, 1)
         self.assertFalse(self.page.move_down())
+
+
+class CLITerminalInputTest(unittest.TestCase):
+    def test_complete_cli_line_becomes_text_event(self):
+        with patch("builtins.input", return_value="echo hello"):
+            event = CLIInputSource().read_event()
+
+        self.assertEqual(event.kind, EVENT_TEXT)
+        self.assertEqual(event.character, "echo hello")
+
+    def test_cli_navigation_remains_available(self):
+        with patch("builtins.input", return_value="w"):
+            event = CLIInputSource().read_event()
+
+        self.assertEqual(event.kind, EVENT_UP)
+
+    def test_single_character_cli_command_is_submitted_text(self):
+        with patch("builtins.input", return_value="x"):
+            event = CLIInputSource().read_event()
+
+        self.assertEqual(event.kind, EVENT_TEXT)
+        self.assertEqual(event.character, "x")
+
+    def test_existing_cli_delete_shortcut_still_maps(self):
+        with patch("builtins.input", return_value="d"):
+            event = CLIInputSource().read_event()
+
+        self.assertEqual(command_for_event(event), "delete")
 
 
 if __name__ == "__main__":

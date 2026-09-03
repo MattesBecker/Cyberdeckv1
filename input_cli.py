@@ -1,10 +1,12 @@
 from typing import Optional, Tuple
 
 from input_common import (
-    EVENT_CHARACTER,
+    EVENT_DOWN,
     EVENT_ENTER,
     EVENT_EOF,
-    EVENT_INVALID,
+    EVENT_ESCAPE,
+    EVENT_TEXT,
+    EVENT_UP,
     InputEvent,
     InputSource,
     command_for_event,
@@ -33,13 +35,16 @@ class CLIInputSource(InputSource):
             return InputEvent(EVENT_EOF)
         if not value:
             return InputEvent(EVENT_ENTER, code=13)
-        if len(value) == 1:
-            return InputEvent(
-                EVENT_CHARACTER,
-                character=value,
-                code=ord(value),
-            )
-        return InputEvent(EVENT_INVALID)
+        cli_navigation = {
+            "w": EVENT_UP,
+            "s": EVENT_DOWN,
+            "b": EVENT_ESCAPE,
+            "q": EVENT_EOF,
+        }
+        event_kind = cli_navigation.get(value.lower())
+        if event_kind is not None:
+            return InputEvent(event_kind)
+        return InputEvent(EVENT_TEXT, character=value)
 
     def read_line(self, prompt: str = "") -> Optional[str]:
         try:

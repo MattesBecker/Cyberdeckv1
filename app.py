@@ -205,28 +205,6 @@ def handle_library_command(
     return False
 
 
-def handle_terminal_command(
-    command: str,
-    terminal_page: TerminalPage,
-    menu: MenuController,
-    input_source: InputSource,
-) -> bool:
-    if command == "up":
-        return terminal_page.move_up()
-    if command == "down":
-        return terminal_page.move_down()
-    if command == "select":
-        terminal_command = terminal_page.selected_history_command
-        if terminal_command is None:
-            terminal_command = input_source.read_line("$ ")
-            if terminal_command is None:
-                return menu.back()
-        return terminal_page.run_command(terminal_command)
-    if command == "back":
-        return menu.back()
-    return False
-
-
 def handle_command(
     command: str,
     menu: MenuController,
@@ -254,10 +232,6 @@ def handle_command(
             )
         if isinstance(page, LibraryPage):
             return handle_library_command(command, page, menu)
-        if isinstance(page, TerminalPage):
-            return handle_terminal_command(
-                command, page, menu, input_source
-            )
         if command == "back":
             return menu.back()
         return False
@@ -330,19 +304,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         while True:
             event = input_source.read_event()
-            command = command_for_event(event)
-            if command == "quit":
-                break
-            if command == "invalid":
-                _print_unknown_input(event)
-                continue
-            changed = handle_command(
-                command,
-                menu,
-                pages,
-                input_source,
-                no_display=args.no_display,
-            )
+            if not menu.is_main_menu() and menu.current_view == TerminalPage.key:
+                terminal_page = pages[TerminalPage.key]
+                if not isinstance(terminal_page, TerminalPage):
+                    raise RuntimeError("Terminal page is not configured.")
+                terminal_action = terminal_page.handle_event(event)
+                if terminal_action == "quit":
+                    break
+                if terminal_action == "invalid":
+                    _print_unknown_input(event)
+                    continue
+                if terminal_action == "back":
+                    changed = menu.back()
+                else:
+                    changed = terminal_action == "changed"
+            else:
+                command = command_for_event(event)
+                if command == "quit":
+                    break
+                if command == "invalid":
+                    _print_unknown_input(event)
+                    continue
+                changed = handle_command(
+                    command,
+                    menu,
+                    pages,
+                    input_source,
+                    no_display=args.no_display,
+                )
             if changed:
                 render_current_view(display, menu, pages)
             tools_page = pages[ToolsPage.key]

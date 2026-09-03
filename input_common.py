@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 
 
 EVENT_CHARACTER = "character"
+EVENT_TEXT = "text"
 EVENT_ENTER = "enter"
 EVENT_ESCAPE = "escape"
 EVENT_TAB = "tab"
@@ -46,7 +47,10 @@ def command_for_event(event: InputEvent) -> str:
     if command is not None:
         return command
 
-    if event.kind == EVENT_CHARACTER and event.character is not None:
+    if (
+        event.kind in (EVENT_CHARACTER, EVENT_TEXT)
+        and event.character is not None
+    ):
         return {
             "w": "up",
             "s": "down",
