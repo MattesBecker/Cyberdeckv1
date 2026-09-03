@@ -3,15 +3,10 @@ import sys
 import traceback
 from typing import Dict, Optional, Sequence
 
-from config import MENU_ITEMS, NOTES_DIR, TASKS_FILE
+from config import INPUT_MODE, MENU_ITEMS, NOTES_DIR, TASKS_FILE
 from display import DisplayError, EpaperDisplay
-from input_cli import (
-    confirm_note_delete,
-    confirm_task_delete,
-    read_command,
-    read_note_input,
-    read_task_title,
-)
+from input_common import InputError, InputEvent, InputSource, command_for_event
+from input_factory import INPUT_MODES, create_input_source
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
@@ -26,6 +21,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--no-display",
         action="store_true",
         help="render views as terminal text without Waveshare hardware",
+    )
+    parser.add_argument(
+        "--input",
+        choices=INPUT_MODES,
+        default=INPUT_MODE,
+        help="input source: auto-detect CardKB, CardKB only, or CLI",
     )
     return parser.parse_args(argv)
 
@@ -52,7 +53,10 @@ def render_current_view(
 
 
 def handle_notes_command(
-    command: str, notes_page: NotesPage, menu: MenuController
+    command: str,
+    notes_page: NotesPage,
+    menu: MenuController,
+    input_source: InputSource,
 ) -> bool:
     if command == "up":
         return notes_page.move_up()
@@ -61,7 +65,7 @@ def handle_notes_command(
     if command == "select":
         result = notes_page.select()
         if result == "new":
-            note_input = read_note_input()
+            note_input = input_source.read_note_input()
             if note_input is None:
                 return False
             title, text = note_input
@@ -72,7 +76,7 @@ def handle_notes_command(
         note = notes_page.current_note
         if note is None or notes_page.mode != notes_page.NOTE_MODE:
             return False
-        if not confirm_note_delete(note.title):
+        if not input_source.confirm_note_delete(note.title):
             return False
         return notes_page.delete_current_note()
     if command == "back":
@@ -83,7 +87,10 @@ def handle_notes_command(
 
 
 def handle_tasks_command(
-    command: str, tasks_page: TasksPage, menu: MenuController
+    command: str,
+    tasks_page: TasksPage,
+    menu: MenuController,
+    input_source: InputSource,
 ) -> bool:
     if command == "up":
         return tasks_page.move_up()
@@ -92,7 +99,7 @@ def handle_tasks_command(
     if command == "select":
         result = tasks_page.select()
         if result == "new":
-            title = read_task_title()
+            title = input_source.read_task_title()
             if title is None:
                 return False
             if not title:
@@ -105,7 +112,7 @@ def handle_tasks_command(
         task = tasks_page.selected_task
         if task is None:
             return False
-        if not confirm_task_delete(task.title):
+        if not input_source.confirm_task_delete(task.title):
             return False
         return tasks_page.delete_selected_task()
     if command == "back":
@@ -117,18 +124,19 @@ def handle_command(
     command: str,
     menu: MenuController,
     pages: Dict[str, BasePage],
+    input_source: InputSource,
 ) -> bool:
     if not menu.is_main_menu():
         page = pages[menu.current_view]
         if isinstance(page, NotesPage):
             try:
-                return handle_notes_command(command, page, menu)
+                return handle_notes_command(command, page, menu, input_source)
             except NotesStoreError as exc:
                 print("Notes error: {0}".format(exc), file=sys.stderr)
                 return False
         if isinstance(page, TasksPage):
             try:
-                return handle_tasks_command(command, page, menu)
+                return handle_tasks_command(command, page, menu, input_source)
             except TasksStoreError as exc:
                 print("Tasks error: {0}".format(exc), file=sys.stderr)
                 return False
@@ -164,10 +172,13 @@ def handle_command(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     display: Optional[EpaperDisplay] = None
+    input_source: Optional[InputSource] = None
     exit_code = 0
 
     try:
         setup_data()
+        input_source = create_input_source(args.input)
+        print("Input source: {0}".format(input_source.name))
         display = EpaperDisplay(enabled=not args.no_display)
         display.initialize()
 
@@ -178,13 +189,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         render_current_view(display, menu, pages)
 
         while True:
-            command = read_command()
+            event = input_source.read_event()
+            command = command_for_event(event)
             if command == "quit":
                 break
             if command == "invalid":
-                print("Unknown command. Use w, s, Enter, b, d, or q.")
+                _print_unknown_input(event)
                 continue
-            if handle_command(command, menu, pages):
+            if handle_command(command, menu, pages, input_source):
                 render_current_view(display, menu, pages)
     except KeyboardInterrupt:
         print("\nStopping Cyberdeck.")
@@ -194,6 +206,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except TasksStoreError as exc:
         print("Tasks error: {0}".format(exc), file=sys.stderr)
         exit_code = 1
+    except InputError as exc:
+        print("Input error: {0}".format(exc), file=sys.stderr)
+        exit_code = 1
     except DisplayError as exc:
         print("Display error: {0}".format(exc), file=sys.stderr)
         exit_code = 1
@@ -202,6 +217,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         traceback.print_exc()
         exit_code = 1
     finally:
+        if input_source is not None:
+            input_source.close()
         if display is not None:
             try:
                 display.sleep()
@@ -210,6 +227,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 exit_code = 1
 
     return exit_code
+
+
+def _print_unknown_input(event: InputEvent) -> None:
+    if isinstance(event.code, int):
+        print(
+            "Unsupported input code {0} (0x{0:02X}); ignoring.".format(
+                event.code
+            )
+        )
+        return
+    if event.code is not None:
+        print("Unsupported input code {0}; ignoring.".format(event.code))
+        return
+    print("Unknown command. Use arrows, Enter, Esc, w, s, b, d, or q.")
 
 
 if __name__ == "__main__":
