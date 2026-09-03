@@ -12,6 +12,8 @@ from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
 from pages.notes import NotesPage
 from pages.tasks import TasksPage
+from pages.tools import ToolsPage
+from services import PowerController, SystemActionError
 from tasks_store import TasksStore, TasksStoreError
 
 
@@ -120,11 +122,50 @@ def handle_tasks_command(
     return False
 
 
+def handle_tools_command(
+    command: str,
+    tools_page: ToolsPage,
+    menu: MenuController,
+    input_source: InputSource,
+    no_display: bool,
+) -> bool:
+    if command == "up":
+        return tools_page.move_up()
+    if command == "down":
+        return tools_page.move_down()
+    if command == "select":
+        result = tools_page.select()
+        if result == "ping":
+            target = input_source.read_line("Ping host: ")
+            if target is None:
+                return False
+            tools_page.run_ping(target)
+            return True
+        if result in ("reboot", "shutdown"):
+            if not input_source.confirm_system_action(result):
+                return False
+            tools_page.confirm_power_action(result, simulated=no_display)
+            if no_display:
+                print(
+                    "No-display mode: {0} simulated; no command executed.".format(
+                        result
+                    )
+                )
+            return True
+        return result == "changed"
+    if command == "back":
+        if tools_page.back_to_menu():
+            return True
+        return menu.back()
+    return False
+
+
 def handle_command(
     command: str,
     menu: MenuController,
     pages: Dict[str, BasePage],
     input_source: InputSource,
+    no_display: bool = False,
 ) -> bool:
     if not menu.is_main_menu():
         page = pages[menu.current_view]
@@ -140,6 +181,10 @@ def handle_command(
             except TasksStoreError as exc:
                 print("Tasks error: {0}".format(exc), file=sys.stderr)
                 return False
+        if isinstance(page, ToolsPage):
+            return handle_tools_command(
+                command, page, menu, input_source, no_display
+            )
         if command == "back":
             return menu.back()
         return False
@@ -163,6 +208,10 @@ def handle_command(
                     print("Tasks error: {0}".format(exc), file=sys.stderr)
                     menu.back()
                     return False
+        elif changed and menu.current_view == ToolsPage.key:
+            tools_page = pages[ToolsPage.key]
+            if isinstance(tools_page, ToolsPage):
+                tools_page.open_menu()
         return changed
     if command == "back":
         return menu.back()
@@ -173,6 +222,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     display: Optional[EpaperDisplay] = None
     input_source: Optional[InputSource] = None
+    requested_power_action: Optional[str] = None
+    power_controller = PowerController()
     exit_code = 0
 
     try:
@@ -196,8 +247,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if command == "invalid":
                 _print_unknown_input(event)
                 continue
-            if handle_command(command, menu, pages, input_source):
+            changed = handle_command(
+                command,
+                menu,
+                pages,
+                input_source,
+                no_display=args.no_display,
+            )
+            if changed:
                 render_current_view(display, menu, pages)
+            tools_page = pages[ToolsPage.key]
+            if isinstance(tools_page, ToolsPage):
+                requested_power_action = tools_page.take_power_action()
+            if requested_power_action is not None:
+                break
     except KeyboardInterrupt:
         print("\nStopping Cyberdeck.")
     except NotesStoreError as exc:
@@ -225,6 +288,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except DisplayError as exc:
                 print("Shutdown warning: {0}".format(exc), file=sys.stderr)
                 exit_code = 1
+
+    if requested_power_action is not None:
+        try:
+            power_controller.execute(requested_power_action)
+        except SystemActionError as exc:
+            print("System action error: {0}".format(exc), file=sys.stderr)
+            exit_code = 1
 
     return exit_code
 

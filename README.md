@@ -89,19 +89,34 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `input_factory.py`: Auswahl und Auto-Fallback der Eingabequelle
 - `notes_store.py`: UTF-8-Dateispeicher für einzelne Markdown-Notizen
 - `tasks_store.py`: atomischer JSON-Dateispeicher für Aufgaben
+- `services/system_info.py`: `/proc`-Systemwerte und bestätigte Power-Aktionen
+- `services/network_info.py`: `nmcli`-WLAN-Status und sicherer Einzel-Ping
 - `pages/`: kleine, unabhängige UI-Seiten
 - `data/`: lokale Notizen und Aufgaben
 
 Notes werden unter `data/notes/` als `YYYYMMDD_HHMMSS.md` gespeichert. Der
-Eintrag `+ New note` fragt Titel und Text im Terminal ab; eine einzelne Zeile
-mit `.` beendet die Texteingabe. Geöffnete Notizen können nach Bestätigung mit
-`d` gelöscht werden.
+Eintrag `+ New note` fragt Titel und Text über die aktive Eingabequelle ab;
+eine einzelne Zeile mit `.` beendet die Texteingabe. Geöffnete Notizen können
+nach Bestätigung mit `d` gelöscht werden.
 
 Tasks werden lokal in `data/tasks.json` gespeichert. `+ New task` fragt den
-Titel im Terminal ab. Bei vorhandenen Aufgaben schaltet `Enter` zwischen
-`[ ]` und `[x]` um; `d` löscht die ausgewählte Aufgabe nach Bestätigung.
+Titel über die aktive Eingabequelle ab. Bei vorhandenen Aufgaben schaltet
+`Enter` zwischen `[ ]` und `[x]` um; `d` löscht die ausgewählte Aufgabe nach
+Bestätigung.
 `tasks.example.json` ist die versionierte Vorlage, während echte Laufzeitdaten
 von Git ignoriert werden.
+
+## Tools
+
+Das Tools-Menü enthält `System info`, `Network`, `Reboot` und `Shutdown`.
+Systemwerte werden nur beim Öffnen oder bei einem manuellen Refresh gelesen.
+Die Network-Seite zeigt SSID, lokale IPv4-Adresse und Signalstärke über
+`nmcli`; ein Ping führt genau einen Prozess mit festem Timeout und ohne Shell
+aus.
+
+Reboot und Shutdown benötigen eine ausdrückliche `y`-Bestätigung. Im
+`--no-display`-Modus werden beide Aktionen ausschließlich simuliert und kein
+Systembefehl ausgeführt.
 
 ## Tests
 
