@@ -4,6 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 NOTES_DIR = DATA_DIR / "notes"
+LIBRARY_DIR = DATA_DIR / "library"
 TASKS_FILE = DATA_DIR / "tasks.json"
 
 INPUT_MODE = "auto"

@@ -89,10 +89,12 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `input_factory.py`: Auswahl und Auto-Fallback der Eingabequelle
 - `notes_store.py`: UTF-8-Dateispeicher für einzelne Markdown-Notizen
 - `tasks_store.py`: atomischer JSON-Dateispeicher für Aufgaben
+- `services/library_service.py`: sicherer Zugriff auf die Offline-Bibliothek
 - `services/system_info.py`: `/proc`-Systemwerte und bestätigte Power-Aktionen
 - `services/network_info.py`: `nmcli`-WLAN-Status und sicherer Einzel-Ping
 - `pages/`: kleine, unabhängige UI-Seiten
-- `data/`: lokale Notizen und Aufgaben
+- `data/`: lokale Notizen, Aufgaben und Bibliotheksdateien
+- `data/library/`: lokale `.txt`- und `.md`-Dokumente
 
 Notes werden unter `data/notes/` als `YYYYMMDD_HHMMSS.md` gespeichert. Der
 Eintrag `+ New note` fragt Titel und Text über die aktive Eingabequelle ab;
@@ -105,6 +107,16 @@ Titel über die aktive Eingabequelle ab. Bei vorhandenen Aufgaben schaltet
 Bestätigung.
 `tasks.example.json` ist die versionierte Vorlage, während echte Laufzeitdaten
 von Git ignoriert werden.
+
+## Library
+
+Die Offline-Bibliothek zeigt unterstützte Dateien und Unterordner unter
+`data/library/`. `.txt`- und `.md`-Dateien werden als reiner UTF-8-Text
+geöffnet, auf Displaybreite umgebrochen und mit `w`/`s` beziehungsweise den
+Pfeiltasten seitenweise gelesen. `b`, `Esc` oder Pfeil links führt von der
+Datei in den Ordner, vom Unterordner in den übergeordneten Ordner und vom
+Bibliotheksstamm zurück ins Hauptmenü. Andere Dateitypen und symbolische Links
+werden nicht geöffnet.
 
 ## Tools
 
@@ -129,5 +141,4 @@ python3 -m compileall .
 ## Spätere Erweiterungen
 
 - Hardwarebuttons
-- Offline Library
 - Sync

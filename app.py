@@ -3,17 +3,18 @@ import sys
 import traceback
 from typing import Dict, Optional, Sequence
 
-from config import INPUT_MODE, MENU_ITEMS, NOTES_DIR, TASKS_FILE
+from config import INPUT_MODE, LIBRARY_DIR, MENU_ITEMS, NOTES_DIR, TASKS_FILE
 from display import DisplayError, EpaperDisplay
 from input_common import InputError, InputEvent, InputSource, command_for_event
 from input_factory import INPUT_MODES, create_input_source
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
+from pages.library import LibraryPage
 from pages.notes import NotesPage
 from pages.tasks import TasksPage
 from pages.tools import ToolsPage
-from services import PowerController, SystemActionError
+from services import LibraryService, PowerController, SystemActionError
 from tasks_store import TasksStore, TasksStoreError
 
 
@@ -170,6 +171,24 @@ def handle_tools_command(
     return False
 
 
+def handle_library_command(
+    command: str,
+    library_page: LibraryPage,
+    menu: MenuController,
+) -> bool:
+    if command == "up":
+        return library_page.move_up()
+    if command == "down":
+        return library_page.move_down()
+    if command == "select":
+        return library_page.select() in ("opened", "changed")
+    if command == "back":
+        if library_page.back():
+            return True
+        return menu.back()
+    return False
+
+
 def handle_command(
     command: str,
     menu: MenuController,
@@ -195,6 +214,8 @@ def handle_command(
             return handle_tools_command(
                 command, page, menu, input_source, no_display
             )
+        if isinstance(page, LibraryPage):
+            return handle_library_command(command, page, menu)
         if command == "back":
             return menu.back()
         return False
@@ -222,6 +243,10 @@ def handle_command(
             tools_page = pages[ToolsPage.key]
             if isinstance(tools_page, ToolsPage):
                 tools_page.open_menu()
+        elif changed and menu.current_view == LibraryPage.key:
+            library_page = pages[LibraryPage.key]
+            if isinstance(library_page, LibraryPage):
+                library_page.open_root()
         return changed
     if command == "back":
         return menu.back()
@@ -246,7 +271,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         menu = MenuController(MENU_ITEMS)
         tasks_store = TasksStore(TASKS_FILE)
         tasks_store.ensure_file()
-        pages = create_pages(NotesStore(NOTES_DIR), tasks_store)
+        pages = create_pages(
+            NotesStore(NOTES_DIR),
+            tasks_store,
+            LibraryService(LIBRARY_DIR),
+        )
         render_current_view(display, menu, pages)
 
         while True:
