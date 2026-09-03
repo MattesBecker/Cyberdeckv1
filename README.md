@@ -89,7 +89,9 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `input_factory.py`: Auswahl und Auto-Fallback der Eingabequelle
 - `notes_store.py`: UTF-8-Dateispeicher für einzelne Markdown-Notizen
 - `tasks_store.py`: atomischer JSON-Dateispeicher für Aufgaben
+- `terminal_history.py`: lokale History der letzten 20 Befehle
 - `services/library_service.py`: sicherer Zugriff auf die Offline-Bibliothek
+- `services/terminal_service.py`: begrenzte Befehlsausführung ohne Shell
 - `services/system_info.py`: `/proc`-Systemwerte und bestätigte Power-Aktionen
 - `services/network_info.py`: `nmcli`-WLAN-Status und sicherer Einzel-Ping
 - `pages/`: kleine, unabhängige UI-Seiten
@@ -107,6 +109,21 @@ Titel über die aktive Eingabequelle ab. Bei vorhandenen Aufgaben schaltet
 Bestätigung.
 `tasks.example.json` ist die versionierte Vorlage, während echte Laufzeitdaten
 von Git ignoriert werden.
+
+## Terminal
+
+Terminal V1 führt einzelne, nicht-interaktive Befehle aus. `Enter` öffnet die
+Eingabe über die aktive CLI- oder CardKB-Quelle. Die Befehlszeile wird mit
+`shlex.split()` zerlegt und ohne Shell, ohne Eingabe-Weiterleitung und mit zehn
+Sekunden Timeout gestartet. Pipes, Umleitungen, Shell-Expansion, `sudo`-Prompts
+und interaktive Programme werden nicht emuliert.
+
+Standardausgabe und Fehlerausgabe erscheinen als umbrechbarer Klartext auf dem
+Display. Mit `w`/`s` oder Pfeil hoch/runter wird seitenweise geblättert;
+`Enter` startet die nächste Eingabe und `b`/`Esc` kehrt ins Hauptmenü zurück.
+Im leeren Terminal-Prompt wählen hoch/runter einen der letzten 20 lokal
+gespeicherten Befehle zur erneuten Ausführung aus. Die History-Datei unter
+`data/terminal_history.txt` wird nicht versioniert.
 
 ## Library
 

@@ -11,3 +11,5 @@ data/library/*
 !data/library/.gitkeep
 data/tasks.json*
 data/.tasks.*.tmp
+data/terminal_history.txt
+data/.terminal_history.*.tmp

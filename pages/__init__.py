@@ -1,8 +1,14 @@
 from typing import Dict, Optional
 
 from notes_store import NotesStore
-from services import LibraryService, NetworkInfoService, SystemInfoService
+from services import (
+    LibraryService,
+    NetworkInfoService,
+    SystemInfoService,
+    TerminalService,
+)
 from tasks_store import TasksStore
+from terminal_history import TerminalHistoryStore
 
 from .base import BasePage
 from .library import LibraryPage
@@ -14,7 +20,6 @@ from .tools import ToolsPage
 
 
 STATIC_PAGE_TYPES = (
-    TerminalPage,
     SyncPage,
 )
 
@@ -23,6 +28,8 @@ def create_pages(
     notes_store: NotesStore,
     tasks_store: TasksStore,
     library_service: LibraryService,
+    terminal_service: TerminalService,
+    terminal_history: TerminalHistoryStore,
     system_service: Optional[SystemInfoService] = None,
     network_service: Optional[NetworkInfoService] = None,
 ) -> Dict[str, BasePage]:
@@ -32,6 +39,9 @@ def create_pages(
     pages[NotesPage.key] = NotesPage(notes_store)
     pages[TasksPage.key] = TasksPage(tasks_store)
     pages[LibraryPage.key] = LibraryPage(library_service)
+    pages[TerminalPage.key] = TerminalPage(
+        terminal_service, terminal_history
+    )
     pages[ToolsPage.key] = ToolsPage(
         system_service or SystemInfoService(),
         network_service or NetworkInfoService(),

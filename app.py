@@ -3,7 +3,16 @@ import sys
 import traceback
 from typing import Dict, Optional, Sequence
 
-from config import INPUT_MODE, LIBRARY_DIR, MENU_ITEMS, NOTES_DIR, TASKS_FILE
+from config import (
+    INPUT_MODE,
+    LIBRARY_DIR,
+    MENU_ITEMS,
+    NOTES_DIR,
+    TASKS_FILE,
+    TERMINAL_COMMAND_TIMEOUT,
+    TERMINAL_HISTORY_FILE,
+    TERMINAL_HISTORY_LIMIT,
+)
 from display import DisplayError, EpaperDisplay
 from input_common import InputError, InputEvent, InputSource, command_for_event
 from input_factory import INPUT_MODES, create_input_source
@@ -13,9 +22,16 @@ from pages import BasePage, create_pages
 from pages.library import LibraryPage
 from pages.notes import NotesPage
 from pages.tasks import TasksPage
+from pages.terminal import TerminalPage
 from pages.tools import ToolsPage
-from services import LibraryService, PowerController, SystemActionError
+from services import (
+    LibraryService,
+    PowerController,
+    SystemActionError,
+    TerminalService,
+)
 from tasks_store import TasksStore, TasksStoreError
+from terminal_history import TerminalHistoryStore
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -189,6 +205,28 @@ def handle_library_command(
     return False
 
 
+def handle_terminal_command(
+    command: str,
+    terminal_page: TerminalPage,
+    menu: MenuController,
+    input_source: InputSource,
+) -> bool:
+    if command == "up":
+        return terminal_page.move_up()
+    if command == "down":
+        return terminal_page.move_down()
+    if command == "select":
+        terminal_command = terminal_page.selected_history_command
+        if terminal_command is None:
+            terminal_command = input_source.read_line("$ ")
+            if terminal_command is None:
+                return menu.back()
+        return terminal_page.run_command(terminal_command)
+    if command == "back":
+        return menu.back()
+    return False
+
+
 def handle_command(
     command: str,
     menu: MenuController,
@@ -216,6 +254,10 @@ def handle_command(
             )
         if isinstance(page, LibraryPage):
             return handle_library_command(command, page, menu)
+        if isinstance(page, TerminalPage):
+            return handle_terminal_command(
+                command, page, menu, input_source
+            )
         if command == "back":
             return menu.back()
         return False
@@ -247,6 +289,10 @@ def handle_command(
             library_page = pages[LibraryPage.key]
             if isinstance(library_page, LibraryPage):
                 library_page.open_root()
+        elif changed and menu.current_view == TerminalPage.key:
+            terminal_page = pages[TerminalPage.key]
+            if isinstance(terminal_page, TerminalPage):
+                terminal_page.open_terminal()
         return changed
     if command == "back":
         return menu.back()
@@ -275,6 +321,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             NotesStore(NOTES_DIR),
             tasks_store,
             LibraryService(LIBRARY_DIR),
+            TerminalService(TERMINAL_COMMAND_TIMEOUT),
+            TerminalHistoryStore(
+                TERMINAL_HISTORY_FILE, TERMINAL_HISTORY_LIMIT
+            ),
         )
         render_current_view(display, menu, pages)
 
