@@ -114,7 +114,8 @@ Die Network-Seite zeigt SSID, lokale IPv4-Adresse und Signalstärke über
 `nmcli`; ein Ping führt genau einen Prozess mit festem Timeout und ohne Shell
 aus.
 
-Reboot und Shutdown benötigen eine ausdrückliche `y`-Bestätigung. Im
+Reboot und Shutdown zeigen die Bestätigung auf dem Display und benötigen eine
+ausdrückliche `y`-Bestätigung; `n` oder `Esc` brechen ab. Im
 `--no-display`-Modus werden beide Aktionen ausschließlich simuliert und kein
 Systembefehl ausgeführt.
 

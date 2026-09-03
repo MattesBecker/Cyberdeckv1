@@ -53,6 +53,8 @@ def command_for_event(event: InputEvent) -> str:
             "b": "back",
             "d": "delete",
             "q": "quit",
+            "y": "yes",
+            "n": "no",
         }.get(event.character.lower(), "invalid")
     return "invalid"
 
@@ -136,9 +138,4 @@ class InputSource:
         answer = self.read_line(
             "Delete task '{0}'? y/n: ".format(title)
         )
-        return answer is not None and answer.strip().lower() in ("y", "yes")
-
-    def confirm_system_action(self, action: str) -> bool:
-        label = "Reboot" if action == "reboot" else "Shutdown"
-        answer = self.read_line("{0} system? y/n: ".format(label))
         return answer is not None and answer.strip().lower() in ("y", "yes")

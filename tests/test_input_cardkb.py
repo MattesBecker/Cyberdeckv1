@@ -82,6 +82,11 @@ class DecodeCardKBTest(unittest.TestCase):
         self.assertEqual(event.code, 200)
         self.assertEqual(command_for_event(event), "invalid")
 
+    def test_confirmation_characters_map_to_commands(self):
+        self.assertEqual(command_for_event(decode_cardkb_code(ord("y"))), "yes")
+        self.assertEqual(command_for_event(decode_cardkb_code(ord("Y"))), "yes")
+        self.assertEqual(command_for_event(decode_cardkb_code(ord("n"))), "no")
+
 
 class CardKBInputSourceTest(unittest.TestCase):
     def test_probe_polling_and_character_read(self):

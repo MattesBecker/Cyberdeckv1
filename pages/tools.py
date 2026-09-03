@@ -19,6 +19,7 @@ class ToolsPage(BasePage):
     SYSTEM_MODE = "system"
     NETWORK_MODE = "network"
     PING_MODE = "ping"
+    CONFIRM_MODE = "confirm"
     POWER_MODE = "power"
 
     MENU_ITEMS = ("System info", "Network", "Reboot", "Shutdown")
@@ -36,6 +37,7 @@ class ToolsPage(BasePage):
         self.network_info: Optional[NetworkInfo] = None
         self.ping_result: Optional[PingResult] = None
         self.power_message = ""
+        self._confirmation_action: Optional[str] = None
         self._pending_power_action: Optional[str] = None
 
     def open_menu(self, reset_selection: bool = True) -> None:
@@ -44,6 +46,7 @@ class ToolsPage(BasePage):
         self.network_info = None
         self.ping_result = None
         self.power_message = ""
+        self._confirmation_action = None
         self._pending_power_action = None
         if reset_selection:
             self.selected_index = 0
@@ -78,7 +81,8 @@ class ToolsPage(BasePage):
         if action == "network":
             self.show_network_info()
             return "changed"
-        return action
+        self.show_power_confirmation(action)
+        return "changed"
 
     def show_system_info(self) -> None:
         self.system_info = self.system_service.read()
@@ -92,7 +96,30 @@ class ToolsPage(BasePage):
         self.ping_result = self.network_service.ping(target)
         self.mode = self.PING_MODE
 
-    def confirm_power_action(self, action: str, simulated: bool) -> None:
+    @property
+    def is_confirming(self) -> bool:
+        return (
+            self.mode == self.CONFIRM_MODE
+            and self._confirmation_action is not None
+        )
+
+    def show_power_confirmation(self, action: str) -> None:
+        self._confirmation_action = action
+        self._pending_power_action = None
+        self.mode = self.CONFIRM_MODE
+
+    def resolve_power_confirmation(
+        self, confirmed: bool, simulated: bool
+    ) -> Optional[str]:
+        action = self._confirmation_action
+        if not self.is_confirming or action is None:
+            return None
+
+        self._confirmation_action = None
+        if not confirmed:
+            self.mode = self.MENU_MODE
+            return action
+
         label = "Reboot" if action == "reboot" else "Shutdown"
         self.mode = self.POWER_MODE
         if simulated:
@@ -101,6 +128,7 @@ class ToolsPage(BasePage):
         else:
             self.power_message = label + " requested"
             self._pending_power_action = action
+        return action
 
     def take_power_action(self) -> Optional[str]:
         action = self._pending_power_action
@@ -111,6 +139,7 @@ class ToolsPage(BasePage):
         if self.mode == self.MENU_MODE:
             return False
         self.mode = self.MENU_MODE
+        self._confirmation_action = None
         self._pending_power_action = None
         return True
 
@@ -126,6 +155,12 @@ class ToolsPage(BasePage):
         if self.mode == self.PING_MODE:
             return display.render_page(
                 "PING", self._ping_lines(), "Enter: again  b"
+            )
+        if self.mode == self.CONFIRM_MODE:
+            action = self._confirmation_action or "shutdown"
+            label = "Reboot" if action == "reboot" else "Shutdown"
+            return display.render_page(
+                label.upper(), [label + " system?", "y / n"], "Esc: cancel"
             )
         if self.mode == self.POWER_MODE:
             return display.render_page(

@@ -86,14 +86,35 @@ class ToolsPageTest(unittest.TestCase):
         self.assertEqual(self.display.last[0], "PING")
         self.assertEqual(self.display.last[1], ["router", "", "OK", "12.5 ms"])
 
+    def test_power_confirmation_is_rendered(self):
+        self.page.selected_index = 3
+        self.assertEqual(self.page.select(), "changed")
+        self.assertTrue(self.page.is_confirming)
+        self.page.render(self.display)
+        self.assertEqual(self.display.last[0], "SHUTDOWN")
+        self.assertEqual(
+            self.display.last[1], ["Shutdown system?", "y / n"]
+        )
+
+    def test_no_cancels_power_confirmation(self):
+        self.page.show_power_confirmation("shutdown")
+        self.assertEqual(
+            self.page.resolve_power_confirmation(False, simulated=False),
+            "shutdown",
+        )
+        self.assertEqual(self.page.mode, self.page.MENU_MODE)
+        self.assertIsNone(self.page.take_power_action())
+
     def test_no_display_power_confirmation_has_no_pending_action(self):
-        self.page.confirm_power_action("reboot", simulated=True)
+        self.page.show_power_confirmation("reboot")
+        self.page.resolve_power_confirmation(True, simulated=True)
         self.assertIsNone(self.page.take_power_action())
         self.page.render(self.display)
         self.assertIn("simulated", self.display.last[1][0])
 
     def test_real_power_confirmation_is_consumed_once(self):
-        self.page.confirm_power_action("shutdown", simulated=False)
+        self.page.show_power_confirmation("shutdown")
+        self.page.resolve_power_confirmation(True, simulated=False)
         self.assertEqual(self.page.take_power_action(), "shutdown")
         self.assertIsNone(self.page.take_power_action())
 

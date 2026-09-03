@@ -129,6 +129,27 @@ def handle_tools_command(
     input_source: InputSource,
     no_display: bool,
 ) -> bool:
+    if tools_page.is_confirming:
+        if command == "yes":
+            action = tools_page.resolve_power_confirmation(
+                confirmed=True, simulated=no_display
+            )
+            if no_display and action is not None:
+                print(
+                    "No-display mode: {0} simulated; no command executed.".format(
+                        action
+                    )
+                )
+            return action is not None
+        if command in ("no", "back"):
+            return (
+                tools_page.resolve_power_confirmation(
+                    confirmed=False, simulated=no_display
+                )
+                is not None
+            )
+        return False
+
     if command == "up":
         return tools_page.move_up()
     if command == "down":
@@ -140,17 +161,6 @@ def handle_tools_command(
             if target is None:
                 return False
             tools_page.run_ping(target)
-            return True
-        if result in ("reboot", "shutdown"):
-            if not input_source.confirm_system_action(result):
-                return False
-            tools_page.confirm_power_action(result, simulated=no_display)
-            if no_display:
-                print(
-                    "No-display mode: {0} simulated; no command executed.".format(
-                        result
-                    )
-                )
             return True
         return result == "changed"
     if command == "back":
@@ -285,6 +295,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if display is not None:
             try:
                 display.sleep()
+            except KeyboardInterrupt:
+                print("\nDisplay sleep interrupted.", file=sys.stderr)
             except DisplayError as exc:
                 print("Shutdown warning: {0}".format(exc), file=sys.stderr)
                 exit_code = 1
