@@ -1,22 +1,13 @@
 from typing import TYPE_CHECKING, List, Optional
 
-from input_common import (
-    EVENT_DOWN,
-    EVENT_ENTER,
-    EVENT_ESCAPE,
-    EVENT_LEFT,
-    EVENT_RIGHT,
-    EVENT_UP,
-)
 from .base import BasePage
 
 if TYPE_CHECKING:
     from display import EpaperDisplay
-    from input_common import InputEvent
 
 
 class GamesPage(BasePage):
-    """Small offline games that work well with e-paper and CardKB navigation."""
+    """Small offline games designed for slow e-paper refreshes."""
 
     key = "games"
     title = "GAMES"
@@ -39,34 +30,12 @@ class GamesPage(BasePage):
         self.selected_index = 0
         self.message = ""
 
-    def handle_event(self, event: "InputEvent") -> str:
-        if event.kind == EVENT_ESCAPE:
-            if self.back_to_menu():
-                return "changed"
-            return "back"
-        if event.kind == EVENT_UP:
-            return "changed" if self.move_up() else "unchanged"
-        if event.kind == EVENT_DOWN:
-            return "changed" if self.move_down() else "unchanged"
-        if event.kind == EVENT_LEFT:
-            if self.mode == self.MENU_MODE:
-                return "back"
-            return "changed" if self.move_left() else "unchanged"
-        if event.kind == EVENT_RIGHT:
-            if self.mode == self.MENU_MODE:
-                result = self.select()
-                return result
-            return "changed" if self.move_right() else "unchanged"
-        if event.kind == EVENT_ENTER:
-            return self.select()
-        return "invalid"
-
     def move_up(self) -> bool:
         if self.mode == self.MENU_MODE:
             self.selected_index = (self.selected_index - 1) % len(self.MENU_ITEMS)
             return True
         if self.mode in (self.TTT_MODE, self.MINES_MODE):
-            self.cursor = (self.cursor - 3) % 9
+            self.cursor = (self.cursor - 1) % 9
             return True
         return False
 
@@ -75,25 +44,9 @@ class GamesPage(BasePage):
             self.selected_index = (self.selected_index + 1) % len(self.MENU_ITEMS)
             return True
         if self.mode in (self.TTT_MODE, self.MINES_MODE):
-            self.cursor = (self.cursor + 3) % 9
+            self.cursor = (self.cursor + 1) % 9
             return True
         return False
-
-    def move_left(self) -> bool:
-        if self.mode not in (self.TTT_MODE, self.MINES_MODE):
-            return False
-        row = self.cursor // 3
-        col = self.cursor % 3
-        self.cursor = row * 3 + ((col - 1) % 3)
-        return True
-
-    def move_right(self) -> bool:
-        if self.mode not in (self.TTT_MODE, self.MINES_MODE):
-            return False
-        row = self.cursor // 3
-        col = self.cursor % 3
-        self.cursor = row * 3 + ((col + 1) % 3)
-        return True
 
     def select(self) -> str:
         if self.mode == self.MENU_MODE:
@@ -123,18 +76,18 @@ class GamesPage(BasePage):
     def render(self, display: "EpaperDisplay") -> bool:
         if self.mode == self.TTT_MODE:
             return display.render_page(
-                "TIC-TAC-TOE", self._ttt_lines(), "arrows  Enter  Esc"
+                "TIC-TAC-TOE", self._ttt_lines(), "up/down Enter  b"
             )
         if self.mode == self.MINES_MODE:
             return display.render_page(
-                "MINESWEEPER", self._mine_lines(), "arrows  Enter  Esc"
+                "MINESWEEPER", self._mine_lines(), "up/down Enter  b"
             )
 
         lines = []
         for index, label in enumerate(self.MENU_ITEMS):
             prefix = "> " if index == self.selected_index else "  "
             lines.append(prefix + label)
-        return display.render_page(self.title, lines, "up/down  Enter  Esc")
+        return display.render_page(self.title, lines, "w/s  Enter  b")
 
     def _start_ttt(self) -> None:
         self.mode = self.TTT_MODE
