@@ -12,7 +12,7 @@ import app
 from config import BOOT_LOGO_PATH, BOOT_SCREEN_SECONDS, MENU_ITEMS
 from display import EpaperDisplay
 from input_cli import CLIInputSource
-from input_common import EVENT_FULL_REFRESH, InputEvent, command_for_event
+from input_common import EVENT_CHARACTER, EVENT_FULL_REFRESH, InputEvent, command_for_event
 from menu import MenuController
 from pages.games import GamesPage
 from pages.dashboard import DashboardPage
@@ -221,12 +221,51 @@ class GamesPageTest(unittest.TestCase):
         self.assertEqual(self.page.select(), "changed")
         self.page.render(self.display)
         self.assertEqual(self.display.last[0], "TIC-TAC-TOE")
+        self.assertEqual(self.display.last[1], ["> 1 Player", "  2 Players", "  Back"])
+        self.assertEqual(self.page.select(), "changed")
+        self.page.render(self.display)
+        self.assertEqual(self.display.last[0], "TIC-TAC-TOE 1P")
         self.assertEqual(self.display.renderer, "grid")
         self.assertEqual(self.page.ttt_board, [" "] * 9)
         self.assertEqual(self.page.select(), "changed")
         self.assertEqual(self.page.ttt_board[0], "X")
         self.assertIn("O", self.page.ttt_board)
         self.assertTrue(self.page.back_to_menu())
+
+    def test_tic_tac_toe_two_players_alternate_and_win(self):
+        self.page.move_down()
+        self.page.select()
+        self.page.move_down()
+        self.assertEqual(self.page.select(), "changed")
+        self.assertEqual(self.page.mode, self.page.TTT_TWO_PLAYER_MODE)
+        self.assertEqual(self.page.ttt_player, "X")
+
+        for index, expected_player in (
+            (0, "O"),
+            (3, "X"),
+            (1, "O"),
+            (4, "X"),
+        ):
+            self.page.cursor = index
+            self.assertEqual(self.page.select(), "changed")
+            self.assertEqual(self.page.ttt_player, expected_player)
+
+        self.page.cursor = 2
+        self.page.select()
+        self.assertEqual(self.page.ttt.winner(), "X")
+        self.assertEqual(self.page.message, "X wins! Enter:new")
+        self.assertNotIn("O", self.page.ttt.board[5:])
+
+        self.assertEqual(self.page.select(), "changed")
+        self.assertEqual(self.page.ttt_board, [" "] * 9)
+        self.assertEqual(self.page.ttt_player, "X")
+
+    def test_tic_tac_toe_mode_menu_back_returns_to_games(self):
+        self.page.move_down()
+        self.page.select()
+        result = self.page.handle_event(InputEvent(EVENT_CHARACTER, "b"))
+        self.assertEqual(result, "changed")
+        self.assertEqual(self.page.mode, self.page.MENU_MODE)
 
     def test_minesweeper_starts(self):
         for _ in range(3):

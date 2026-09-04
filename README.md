@@ -111,7 +111,7 @@ Settings speichert validierte Runtime-Werte atomar in `data/settings.json`: Boot
 `Games` enthält vier vollständige Spiele ohne Animation oder Frame-Loop:
 
 - **2048** auf 4×4 mit korrekten Einzel-Merges, zufälligen 2/4-Tiles, Gewinn/Game Over und persistentem Highscore
-- **Tic-Tac-Toe** gegen eine CPU, die gewinnt, blockiert und Mitte/Ecken bevorzugt
+- **Tic-Tac-Toe** wahlweise gegen die CPU oder lokal zu zweit; im Zweispielermodus wechseln X und O nach jedem gültigen Zug
 - **Sudoku** als lesbares 4×4 mit mehreren eingebetteten Puzzles, festen Zellen, Konflikt- und Lösungsprüfung
 - **Minesweeper** auf 8×5 mit sieben Minen, sicherem ersten Zug, Flags, Nachbarzahlen, Flood-Reveal sowie Gewinn/Game Over
 
@@ -203,5 +203,5 @@ Manuelle Prüfung auf dem Raspberry Pi Zero W:
 5. In File Viewer eine kleine UTF-8-Logdatei öffnen und Paging prüfen; ein Symlink nach außerhalb muss abgewiesen werden.
 6. Einen Key-basierten SSH-Shortcut ausführen sowie Timeout/unerreichbaren Host prüfen.
 7. Settings ändern, Service neu starten und Boot-/Start-/Kiwix-Einstellungen kontrollieren.
-8. Alle vier Games mit CardKB-Pfeilen spielen; bei Minesweeper `f` und bei Sudoku `1`–`4`/`0` prüfen.
+8. Alle vier Games mit CardKB-Pfeilen spielen, beide Tic-Tac-Toe-Modi prüfen; bei Minesweeper `f` und bei Sudoku `1`–`4`/`0` testen.
 9. `python3 app.py --no-display --input=cli` starten und Dashboard, Menüs und Back-Navigation prüfen.

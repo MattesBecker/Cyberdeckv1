@@ -303,6 +303,14 @@ class TicTacToeTest(unittest.TestCase):
         game.board = ["X", "O", "X", "X", "O", "O", "O", "X", "X"]
         self.assertTrue(game.draw)
 
+    def test_two_player_marks_and_invalid_moves(self):
+        game = TicTacToe()
+        self.assertTrue(game.move(0, "X"))
+        self.assertTrue(game.move(1, "O"))
+        self.assertFalse(game.move(0, "O"))
+        self.assertFalse(game.move(2, "invalid"))
+        self.assertEqual(game.board[:3], ["X", "O", " "])
+
 
 class SudokuTest(unittest.TestCase):
     def test_fixed_input_validation_and_solved(self):

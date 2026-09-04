@@ -30,10 +30,13 @@ class GamesPage(BasePage):
     title = "GAMES"
     MENU_MODE = "menu"
     GAME_2048_MODE = "2048"
+    TTT_MENU_MODE = "tic_tac_toe_menu"
     TTT_MODE = "tic_tac_toe"
+    TTT_TWO_PLAYER_MODE = "tic_tac_toe_two_player"
     SUDOKU_MODE = "sudoku"
     MINES_MODE = "minesweeper"
     MENU_ITEMS = ("2048", "Tic-Tac-Toe", "Sudoku", "Minesweeper", "Back")
+    TTT_MENU_ITEMS = ("1 Player", "2 Players", "Back")
 
     def __init__(self, stats_store: Optional[GameStatsStore] = None) -> None:
         self.stats_store = stats_store or _MemoryStats()
@@ -43,6 +46,7 @@ class GamesPage(BasePage):
         self.message = ""
         self.game_2048 = Game2048()
         self.ttt = TicTacToe()
+        self.ttt_player = "X"
         self.sudoku = Sudoku4()
         self.minesweeper = Minesweeper()
         self.high_score = self.stats_store.high_score_2048()
@@ -61,14 +65,16 @@ class GamesPage(BasePage):
         self.message = ""
 
     def move_up(self) -> bool:
-        if self.mode == self.MENU_MODE:
-            self.selected_index = (self.selected_index - 1) % len(self.MENU_ITEMS)
+        if self.mode in (self.MENU_MODE, self.TTT_MENU_MODE):
+            items = self._current_menu_items()
+            self.selected_index = (self.selected_index - 1) % len(items)
             return True
         return self._move_cursor("up")
 
     def move_down(self) -> bool:
-        if self.mode == self.MENU_MODE:
-            self.selected_index = (self.selected_index + 1) % len(self.MENU_ITEMS)
+        if self.mode in (self.MENU_MODE, self.TTT_MENU_MODE):
+            items = self._current_menu_items()
+            self.selected_index = (self.selected_index + 1) % len(items)
             return True
         return self._move_cursor("down")
 
@@ -79,7 +85,14 @@ class GamesPage(BasePage):
                 return "back"
             self._start(selected)
             return "changed"
-        if self.mode == self.TTT_MODE:
+        if self.mode == self.TTT_MENU_MODE:
+            selected = self.TTT_MENU_ITEMS[self.selected_index]
+            if selected == "Back":
+                self.open_menu()
+            else:
+                self._start_ttt(two_players=selected == "2 Players")
+            return "changed"
+        if self.mode in (self.TTT_MODE, self.TTT_TWO_PLAYER_MODE):
             return "changed" if self._play_ttt() else "unchanged"
         if self.mode == self.SUDOKU_MODE:
             value = (self.sudoku.board[self.cursor] % 4) + 1
@@ -102,7 +115,7 @@ class GamesPage(BasePage):
             return "quit"
         if event.kind == EVENT_ESCAPE:
             return "changed" if self.back_to_menu() else "back"
-        if self.mode == self.MENU_MODE:
+        if self.mode in (self.MENU_MODE, self.TTT_MENU_MODE):
             command = command_for_event(event)
             if command == "up":
                 return "changed" if self.move_up() else "unchanged"
@@ -111,6 +124,9 @@ class GamesPage(BasePage):
             if command == "select":
                 return self.select()
             if command == "back":
+                if self.mode == self.TTT_MENU_MODE:
+                    self.open_menu()
+                    return "changed"
                 return "back"
             return "invalid"
         direction = self._direction(event)
@@ -140,8 +156,19 @@ class GamesPage(BasePage):
         if self.mode == self.GAME_2048_MODE:
             rows = [" ".join("{0:4}".format(value or ".") for value in row) for row in self.game_2048.board]
             return display.render_grid_page("2048 S:{0}".format(self.game_2048.score), rows, self.message or "arrows Esc")
-        if self.mode == self.TTT_MODE:
-            return display.render_grid_page("TIC-TAC-TOE", self._ttt_lines(), "arrows Enter Esc")
+        if self.mode == self.TTT_MENU_MODE:
+            lines = [
+                ("> " if index == self.selected_index else "  ") + label
+                for index, label in enumerate(self.TTT_MENU_ITEMS)
+            ]
+            return display.render_page("TIC-TAC-TOE", lines, "w/s Enter Esc")
+        if self.mode in (self.TTT_MODE, self.TTT_TWO_PLAYER_MODE):
+            players = "2P" if self.mode == self.TTT_TWO_PLAYER_MODE else "1P"
+            return display.render_grid_page(
+                "TIC-TAC-TOE {0}".format(players),
+                self._ttt_lines(),
+                "arrows Enter Esc",
+            )
         if self.mode == self.SUDOKU_MODE:
             return display.render_grid_page("SUDOKU 4x4", self._sudoku_lines(), self.message or "1-4 0:clear Esc")
         if self.mode == self.MINES_MODE:
@@ -156,9 +183,9 @@ class GamesPage(BasePage):
             self.mode = self.GAME_2048_MODE
             self._update_2048_message()
         elif selected == "Tic-Tac-Toe":
-            self.ttt.reset()
-            self.mode = self.TTT_MODE
-            self.message = "You are X"
+            self.mode = self.TTT_MENU_MODE
+            self.selected_index = 0
+            self.message = ""
         elif selected == "Sudoku":
             self.sudoku.new_game()
             self.mode = self.SUDOKU_MODE
@@ -169,12 +196,21 @@ class GamesPage(BasePage):
             self.message = "First move is safe"
 
     def _restart_current(self) -> None:
-        labels = {self.GAME_2048_MODE: "2048", self.TTT_MODE: "Tic-Tac-Toe", self.SUDOKU_MODE: "Sudoku", self.MINES_MODE: "Minesweeper"}
+        if self.mode in (self.TTT_MODE, self.TTT_TWO_PLAYER_MODE):
+            self._start_ttt(self.mode == self.TTT_TWO_PLAYER_MODE)
+            return
+        labels = {
+            self.GAME_2048_MODE: "2048",
+            self.SUDOKU_MODE: "Sudoku",
+            self.MINES_MODE: "Minesweeper",
+        }
         self._start(labels[self.mode])
 
     def _play_ttt(self) -> bool:
+        if self.mode == self.TTT_TWO_PLAYER_MODE:
+            return self._play_ttt_two_player()
         if self.ttt.winner() or self.ttt.draw:
-            self._start("Tic-Tac-Toe")
+            self._start_ttt(False)
             return True
         if not self.ttt.player_move(self.cursor):
             self.message = "Cell occupied"
@@ -191,6 +227,30 @@ class GamesPage(BasePage):
                 self.message = "Draw. Enter:new"
             else:
                 self.message = "Your turn"
+        return True
+
+    def _start_ttt(self, two_players: bool) -> None:
+        self.cursor = 0
+        self.ttt.reset()
+        self.ttt_player = "X"
+        self.mode = self.TTT_TWO_PLAYER_MODE if two_players else self.TTT_MODE
+        self.message = "X turn" if two_players else "You are X"
+
+    def _play_ttt_two_player(self) -> bool:
+        if self.ttt.winner() or self.ttt.draw:
+            self._start_ttt(True)
+            return True
+        if not self.ttt.move(self.cursor, self.ttt_player):
+            self.message = "Cell occupied"
+            return True
+        winner = self.ttt.winner()
+        if winner:
+            self.message = "{0} wins! Enter:new".format(winner)
+        elif self.ttt.draw:
+            self.message = "Draw. Enter:new"
+        else:
+            self.ttt_player = "O" if self.ttt_player == "X" else "X"
+            self.message = "{0} turn".format(self.ttt_player)
         return True
 
     def _set_sudoku(self, value: int) -> bool:
@@ -219,7 +279,7 @@ class GamesPage(BasePage):
         return changed
 
     def _move_cursor(self, direction: str) -> bool:
-        if self.mode == self.TTT_MODE:
+        if self.mode in (self.TTT_MODE, self.TTT_TWO_PLAYER_MODE):
             width, count = 3, 9
         elif self.mode == self.SUDOKU_MODE:
             width, count = 4, 16
@@ -245,6 +305,11 @@ class GamesPage(BasePage):
         if event.kind in (EVENT_CHARACTER, EVENT_TEXT):
             return {"w": "up", "s": "down", "a": "left", "d": "right"}.get((event.character or "").lower())
         return None
+
+    def _current_menu_items(self):
+        if self.mode == self.TTT_MENU_MODE:
+            return self.TTT_MENU_ITEMS
+        return self.MENU_ITEMS
 
     def _update_2048_message(self) -> None:
         if self.game_2048.won: self.message = "2048! Enter:new"

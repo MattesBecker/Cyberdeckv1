@@ -145,11 +145,20 @@ class TicTacToe:
     def draw(self) -> bool:
         return self.winner() is None and " " not in self.board
 
-    def player_move(self, index: int) -> bool:
-        if self.winner() or self.draw or index not in range(9) or self.board[index] != " ":
+    def move(self, index: int, mark: str) -> bool:
+        if (
+            mark not in ("X", "O")
+            or self.winner()
+            or self.draw
+            or index not in range(9)
+            or self.board[index] != " "
+        ):
             return False
-        self.board[index] = "X"
+        self.board[index] = mark
         return True
+
+    def player_move(self, index: int) -> bool:
+        return self.move(index, "X")
 
     def cpu_move(self) -> Optional[int]:
         if self.winner() or self.draw:
