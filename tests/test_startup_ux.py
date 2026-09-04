@@ -43,8 +43,15 @@ class StartupDisplay:
 class FakePageDisplay:
     def __init__(self):
         self.last = None
+        self.renderer = None
 
     def render_page(self, title, lines, footer):
+        self.renderer = "page"
+        self.last = (title, list(lines), footer)
+        return True
+
+    def render_grid_page(self, title, lines, footer):
+        self.renderer = "grid"
         self.last = (title, list(lines), footer)
         return True
 
@@ -180,6 +187,21 @@ class BootScreenDisplayTest(unittest.TestCase):
         self.assertIn("> Settings", preview)
         self.assertNotIn("> Notes", preview)
 
+    def test_game_grid_font_uses_fixed_character_width(self):
+        display = EpaperDisplay(enabled=False)
+        draw = Mock()
+        display._draw_grid_text(draw, 5, 28, ".XO")
+        positions = [call.args[0] for call in draw.text.call_args_list]
+        self.assertEqual(
+            positions,
+            [
+                (5, 28),
+                (5 + display._grid_cell_width, 28),
+                (5 + 2 * display._grid_cell_width, 28),
+            ],
+        )
+        self.assertGreater(display._grid_cell_width, 0)
+
 
 class GamesPageTest(unittest.TestCase):
     def setUp(self):
@@ -199,6 +221,7 @@ class GamesPageTest(unittest.TestCase):
         self.assertEqual(self.page.select(), "changed")
         self.page.render(self.display)
         self.assertEqual(self.display.last[0], "TIC-TAC-TOE")
+        self.assertEqual(self.display.renderer, "grid")
         self.assertEqual(self.page.ttt_board, [" "] * 9)
         self.assertEqual(self.page.select(), "changed")
         self.assertEqual(self.page.ttt_board[0], "X")
@@ -214,6 +237,19 @@ class GamesPageTest(unittest.TestCase):
         self.assertEqual(self.display.last[0], "MINES 8x5")
         self.page.select()
         self.assertIn(0, self.page.revealed)
+
+    def test_all_game_grid_rows_keep_fixed_width(self):
+        self.page.mode = self.page.TTT_MODE
+        self.assertEqual({len(line) for line in self.page._ttt_lines()[:3]}, {11})
+
+        self.page.mode = self.page.SUDOKU_MODE
+        self.assertEqual({len(line) for line in self.page._sudoku_lines()}, {15})
+
+        self.page.mode = self.page.MINES_MODE
+        before = self.page._mine_lines()
+        self.page.cursor = self.page.minesweeper.cell_count - 1
+        after = self.page._mine_lines()
+        self.assertEqual({len(line) for line in before + after}, {31})
 
     def test_sync_is_removed_and_games_is_visible(self):
         keys = [key for _label, key in MENU_ITEMS]

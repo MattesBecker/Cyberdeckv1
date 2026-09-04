@@ -39,17 +39,31 @@ class EpaperDisplay:
         self._epd = None
         self._initialized = False
         self._font = self._load_font(11)
+        self._mono_font = self._load_font(11, monospace=True)
         self._title_font = self._load_font(12, bold=True)
         self._measure_draw = ImageDraw.Draw(self._new_image())
+        grid_glyphs = "[]|.XO#F*0123456789 "
+        widest_grid_glyph = max(
+            self._text_width(character, self._mono_font)
+            for character in grid_glyphs
+        )
+        self._grid_cell_width = min(
+            widest_grid_glyph,
+            (self.width - 10) // 31,
+        )
 
     @staticmethod
-    def _load_font(size: int, bold: bool = False):
-        filename = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    def _load_font(size: int, bold: bool = False, monospace: bool = False):
+        family = "DejaVuSansMono" if monospace else "DejaVuSans"
+        filename = family + ("-Bold.ttf" if bold else ".ttf")
         font_path = Path("/usr/share/fonts/truetype/dejavu") / filename
         try:
             return ImageFont.truetype(str(font_path), size)
         except (OSError, IOError):
-            return ImageFont.load_default()
+            try:
+                return ImageFont.truetype(filename, size)
+            except (OSError, IOError):
+                return ImageFont.load_default()
 
     def initialize(self) -> None:
         """Initialize the hardware once, or prepare terminal-only rendering."""
@@ -225,6 +239,61 @@ class EpaperDisplay:
         self, title: str, lines: Sequence[str], footer: str = "b: back"
     ) -> bool:
         return self.render_text(title, lines, footer)
+
+    def render_grid_page(
+        self, title: str, lines: Sequence[str], footer: str = "b: back"
+    ) -> bool:
+        """Render fixed-width rows for game boards and other text grids."""
+        try:
+            image = self._new_image()
+            draw = ImageDraw.Draw(image)
+            visible_title = self.truncate_text(title, font=self._title_font)
+            visible_lines = [
+                self._truncate_grid_text(line)
+                for line in list(lines)[: self.body_line_count]
+            ]
+            draw.text((5, 4), visible_title, font=self._title_font, fill=0)
+
+            y = 28
+            for line in visible_lines:
+                self._draw_grid_text(draw, 5, y, line)
+                y += 16
+
+            visible_footer = self.truncate_text(footer)
+            draw.text(
+                (5, self.height - 16),
+                visible_footer,
+                font=self._font,
+                fill=0,
+            )
+            preview_lines = [visible_title, ""] + visible_lines
+            preview_lines.extend(("", visible_footer))
+            return self.refresh(image, preview_lines=preview_lines)
+        except DisplayError:
+            raise
+        except Exception as exc:
+            raise DisplayError(
+                "Failed to render grid page '{0}': {1}".format(title, exc)
+            ) from exc
+
+    def _truncate_grid_text(self, text: str) -> str:
+        max_characters = (self.width - 10) // self._grid_cell_width
+        if len(text) <= max_characters:
+            return text
+        if max_characters <= 3:
+            return "." * max_characters
+        return text[: max_characters - 3].rstrip() + "..."
+
+    def _draw_grid_text(
+        self, draw: ImageDraw.ImageDraw, x: int, y: int, text: str
+    ) -> None:
+        for column, character in enumerate(text):
+            draw.text(
+                (x + column * self._grid_cell_width, y),
+                character,
+                font=self._mono_font,
+                fill=0,
+            )
 
     def truncate_text(
         self,

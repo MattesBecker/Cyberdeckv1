@@ -139,13 +139,13 @@ class GamesPage(BasePage):
     def render(self, display: "EpaperDisplay") -> bool:
         if self.mode == self.GAME_2048_MODE:
             rows = [" ".join("{0:4}".format(value or ".") for value in row) for row in self.game_2048.board]
-            return display.render_page("2048 S:{0}".format(self.game_2048.score), rows, self.message or "arrows Esc")
+            return display.render_grid_page("2048 S:{0}".format(self.game_2048.score), rows, self.message or "arrows Esc")
         if self.mode == self.TTT_MODE:
-            return display.render_page("TIC-TAC-TOE", self._ttt_lines(), "arrows Enter Esc")
+            return display.render_grid_page("TIC-TAC-TOE", self._ttt_lines(), "arrows Enter Esc")
         if self.mode == self.SUDOKU_MODE:
-            return display.render_page("SUDOKU 4x4", self._sudoku_lines(), self.message or "1-4 0:clear Esc")
+            return display.render_grid_page("SUDOKU 4x4", self._sudoku_lines(), self.message or "1-4 0:clear Esc")
         if self.mode == self.MINES_MODE:
-            return display.render_page("MINES 8x5", self._mine_lines(), self.message or "Enter f:flag Esc")
+            return display.render_grid_page("MINES 8x5", self._mine_lines(), self.message or "Enter f:flag Esc")
         lines = [("> " if index == self.selected_index else "  ") + label for index, label in enumerate(self.MENU_ITEMS)]
         return display.render_page(self.title, lines, "w/s Enter b")
 
@@ -285,6 +285,6 @@ class GamesPage(BasePage):
                 elif index in self.minesweeper.revealed: value = "*" if index in mines else str(self.minesweeper.adjacent_count(index))
                 elif self.minesweeper.lost and index in mines: value = "*"
                 else: value = "#"
-                cells.append("[{0}]".format(value) if index == self.cursor else value)
+                cells.append("[{0}]".format(value) if index == self.cursor else " {0} ".format(value))
             lines.append(" ".join(cells))
         return lines
