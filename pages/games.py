@@ -1,9 +1,18 @@
 from typing import TYPE_CHECKING, List, Optional
 
+from input_common import (
+    EVENT_DOWN,
+    EVENT_ENTER,
+    EVENT_ESCAPE,
+    EVENT_LEFT,
+    EVENT_RIGHT,
+    EVENT_UP,
+)
 from .base import BasePage
 
 if TYPE_CHECKING:
     from display import EpaperDisplay
+    from input_common import InputEvent
 
 
 class GamesPage(BasePage):
@@ -29,6 +38,28 @@ class GamesPage(BasePage):
         self.mode = self.MENU_MODE
         self.selected_index = 0
         self.message = ""
+
+    def handle_event(self, event: "InputEvent") -> str:
+        if event.kind == EVENT_ESCAPE:
+            if self.back_to_menu():
+                return "changed"
+            return "back"
+        if event.kind == EVENT_UP:
+            return "changed" if self.move_up() else "unchanged"
+        if event.kind == EVENT_DOWN:
+            return "changed" if self.move_down() else "unchanged"
+        if event.kind == EVENT_LEFT:
+            if self.mode == self.MENU_MODE:
+                return "back"
+            return "changed" if self.move_left() else "unchanged"
+        if event.kind == EVENT_RIGHT:
+            if self.mode == self.MENU_MODE:
+                result = self.select()
+                return result
+            return "changed" if self.move_right() else "unchanged"
+        if event.kind == EVENT_ENTER:
+            return self.select()
+        return "invalid"
 
     def move_up(self) -> bool:
         if self.mode == self.MENU_MODE:
@@ -92,18 +123,18 @@ class GamesPage(BasePage):
     def render(self, display: "EpaperDisplay") -> bool:
         if self.mode == self.TTT_MODE:
             return display.render_page(
-                "TIC-TAC-TOE", self._ttt_lines(), "arrows  Enter  b"
+                "TIC-TAC-TOE", self._ttt_lines(), "arrows  Enter  Esc"
             )
         if self.mode == self.MINES_MODE:
             return display.render_page(
-                "MINESWEEPER", self._mine_lines(), "arrows  Enter  b"
+                "MINESWEEPER", self._mine_lines(), "arrows  Enter  Esc"
             )
 
         lines = []
         for index, label in enumerate(self.MENU_ITEMS):
             prefix = "> " if index == self.selected_index else "  "
             lines.append(prefix + label)
-        return display.render_page(self.title, lines, "w/s  Enter  b")
+        return display.render_page(self.title, lines, "up/down  Enter  Esc")
 
     def _start_ttt(self) -> None:
         self.mode = self.TTT_MODE
@@ -159,7 +190,10 @@ class GamesPage(BasePage):
             (0, 4, 8), (2, 4, 6),
         )
         for a, b, c in wins:
-            if self.ttt_board[a] != " " and self.ttt_board[a] == self.ttt_board[b] == self.ttt_board[c]:
+            if (
+                self.ttt_board[a] != " "
+                and self.ttt_board[a] == self.ttt_board[b] == self.ttt_board[c]
+            ):
                 return self.ttt_board[a]
         return None
 
@@ -170,7 +204,11 @@ class GamesPage(BasePage):
             for col in range(3):
                 index = row * 3 + col
                 value = self.ttt_board[index] if self.ttt_board[index] != " " else "."
-                cells.append("[{0}]".format(value) if index == self.cursor else " {0} ".format(value))
+                cells.append(
+                    "[{0}]".format(value)
+                    if index == self.cursor
+                    else " {0} ".format(value)
+                )
             lines.append("|".join(cells))
         lines.append(self.message)
         return lines
@@ -223,7 +261,11 @@ class GamesPage(BasePage):
                     value = "*"
                 else:
                     value = "#"
-                cells.append("[{0}]".format(value) if index == self.cursor else " {0} ".format(value))
+                cells.append(
+                    "[{0}]".format(value)
+                    if index == self.cursor
+                    else " {0} ".format(value)
+                )
             lines.append(" ".join(cells))
         lines.append(self.message)
         return lines
