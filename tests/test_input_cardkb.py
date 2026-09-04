@@ -10,6 +10,7 @@ from input_common import (
     EVENT_DOWN,
     EVENT_ENTER,
     EVENT_ESCAPE,
+    EVENT_FULL_REFRESH,
     EVENT_LEFT,
     EVENT_RIGHT,
     EVENT_SPECIAL,
@@ -75,6 +76,11 @@ class DecodeCardKBTest(unittest.TestCase):
             event = decode_cardkb_code(code)
             self.assertEqual(event.kind, kind)
             self.assertEqual(command_for_event(event), command)
+
+    def test_fn_r_maps_to_full_refresh(self):
+        event = decode_cardkb_code(144)
+        self.assertEqual(event.kind, EVENT_FULL_REFRESH)
+        self.assertEqual(command_for_event(event), "full_refresh")
 
     def test_unknown_special_code_is_safe(self):
         event = decode_cardkb_code(200)
