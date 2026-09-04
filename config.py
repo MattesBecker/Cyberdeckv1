@@ -29,6 +29,8 @@ INPUT_MODE = "auto"
 CARDKB_I2C_BUS = 3
 CARDKB_I2C_ADDRESS = 0x5F
 CARDKB_POLL_INTERVAL = 0.03
+# Unit CardKB v1.1 default firmware: Fn+R emits 0x90.
+CARDKB_FULL_REFRESH_CODE = 0x90
 
 WAVESHARE_LIB_PATH = Path(
     "/home/pi/e-Paper/RaspberryPi_JetsonNano/python/lib"
@@ -38,7 +40,7 @@ DISPLAY_WIDTH = 250
 DISPLAY_HEIGHT = 122
 DISPLAY_MODEL = "epd2in13_V3"
 BOOT_LOGO_PATH = ASSETS_DIR / "boot_logo.png"
-BOOT_SCREEN_SECONDS = 0.5
+BOOT_SCREEN_SECONDS = 3.0
 
 MENU_ITEMS = [
     ("Notes", "notes"),
