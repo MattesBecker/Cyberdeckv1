@@ -90,7 +90,9 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `notes_store.py`: UTF-8-Dateispeicher für einzelne Markdown-Notizen
 - `tasks_store.py`: atomischer JSON-Dateispeicher für Aufgaben
 - `terminal_history.py`: lokale History der letzten 20 Befehle
-- `services/library_service.py`: sicherer Zugriff auf die Offline-Bibliothek
+- `library/base.py`: gemeinsame Provider-, Item-, Dokument- und Suchmodelle
+- `library/local_provider.py`: sicherer Zugriff auf lokale `.txt`/`.md`-Dateien
+- `library/registry.py`: registriert und ermittelt Bibliotheksquellen
 - `services/terminal_service.py`: begrenzte Befehlsausführung ohne Shell
 - `services/system_info.py`: `/proc`-Systemwerte und bestätigte Power-Aktionen
 - `services/network_info.py`: `nmcli`-WLAN-Status und sicherer Einzel-Ping
@@ -129,13 +131,26 @@ gespeicherten Befehle zur erneuten Ausführung aus. Die History-Datei unter
 
 ## Library
 
-Die Offline-Bibliothek zeigt unterstützte Dateien und Unterordner unter
-`data/library/`. `.txt`- und `.md`-Dateien werden als reiner UTF-8-Text
-geöffnet, auf Displaybreite umgebrochen und mit `w`/`s` beziehungsweise den
-Pfeiltasten seitenweise gelesen. `b`, `Esc` oder Pfeil links führt von der
-Datei in den Ordner, vom Unterordner in den übergeordneten Ordner und vom
-Bibliotheksstamm zurück ins Hauptmenü. Andere Dateitypen und symbolische Links
-werden nicht geöffnet.
+Die Library beginnt mit einer Auswahl der verfügbaren Quellen. `Local files`
+zeigt unterstützte Dateien und Unterordner unter `data/library/`. `.txt`- und
+`.md`-Dateien werden als reiner UTF-8-Text geöffnet, auf Displaybreite
+umgebrochen und mit `w`/`s` beziehungsweise den Pfeiltasten seitenweise
+gelesen. `b`, `Esc` oder Pfeil links führt von der Datei in den Ordner, vom
+Unterordner in den übergeordneten Ordner, vom Stamm zur Quellenauswahl und von
+dort ins Hauptmenü. Andere Dateitypen und symbolische Links werden nicht
+geöffnet.
+
+Die Library-Seite arbeitet nur mit gemeinsamen `LibraryItem`- und
+`LibraryDocument`-Modellen. Dateizugriffe und Pfadprüfungen bleiben vollständig
+im `LocalLibraryProvider`. Ein `SearchResult`-Modell und die provider-neutrale
+`search()`-Schnittstelle sind vorbereitet; der sichtbare Eintrag `Search` ist
+in dieser Version ausdrücklich noch ohne Suchfunktion.
+
+Ein späterer Kiwix-Provider kann dieselbe Provider-Schnittstelle implementieren
+und in `app.py` beim `LibraryProviderRegistry` registriert werden. Er liefert
+dann eigene Item-IDs und ein gemeinsames `LibraryDocument`; die Darstellung
+muss weder ZIM-Dateien noch Kiwix-Aufrufe kennen. Diese Version enthält keine
+Kiwix-Abhängigkeit, keine ZIM-Verarbeitung und keine Volltextindizierung.
 
 ## Tools
 

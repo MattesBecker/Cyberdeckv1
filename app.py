@@ -16,6 +16,7 @@ from config import (
 from display import DisplayError, EpaperDisplay
 from input_common import InputError, InputEvent, InputSource, command_for_event
 from input_factory import INPUT_MODES, create_input_source
+from library import LibraryProviderRegistry, LocalLibraryProvider
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
@@ -25,7 +26,6 @@ from pages.tasks import TasksPage
 from pages.terminal import TerminalPage
 from pages.tools import ToolsPage
 from services import (
-    LibraryService,
     PowerController,
     SystemActionError,
     TerminalService,
@@ -197,7 +197,10 @@ def handle_library_command(
     if command == "down":
         return library_page.move_down()
     if command == "select":
-        return library_page.select() in ("opened", "changed")
+        result = library_page.select()
+        if result == "back":
+            return menu.back()
+        return result in ("opened", "changed")
     if command == "back":
         if library_page.back():
             return True
@@ -262,7 +265,7 @@ def handle_command(
         elif changed and menu.current_view == LibraryPage.key:
             library_page = pages[LibraryPage.key]
             if isinstance(library_page, LibraryPage):
-                library_page.open_root()
+                library_page.open_library()
         elif changed and menu.current_view == TerminalPage.key:
             terminal_page = pages[TerminalPage.key]
             if isinstance(terminal_page, TerminalPage):
@@ -294,7 +297,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         pages = create_pages(
             NotesStore(NOTES_DIR),
             tasks_store,
-            LibraryService(LIBRARY_DIR),
+            LibraryProviderRegistry((LocalLibraryProvider(LIBRARY_DIR),)),
             TerminalService(TERMINAL_COMMAND_TIMEOUT),
             TerminalHistoryStore(
                 TERMINAL_HISTORY_FILE, TERMINAL_HISTORY_LIMIT
