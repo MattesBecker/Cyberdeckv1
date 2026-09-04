@@ -13,6 +13,7 @@ EVENT_DOWN = "down"
 EVENT_LEFT = "left"
 EVENT_RIGHT = "right"
 EVENT_SPECIAL = "special"
+EVENT_FULL_REFRESH = "full_refresh"
 EVENT_EOF = "eof"
 EVENT_INVALID = "invalid"
 
@@ -41,6 +42,7 @@ def command_for_event(event: InputEvent) -> str:
         EVENT_ESCAPE: "back",
         EVENT_BACKSPACE: "back",
         EVENT_TAB: "down",
+        EVENT_FULL_REFRESH: "full_refresh",
         EVENT_EOF: "quit",
     }
     command = direct_commands.get(event.kind)

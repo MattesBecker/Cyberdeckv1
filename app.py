@@ -1,9 +1,14 @@
 import argparse
+import signal
 import sys
+import time
 import traceback
-from typing import Dict, Optional, Sequence
+from types import FrameType
+from typing import Callable, Dict, Optional, Sequence
 
 from config import (
+    BOOT_LOGO_PATH,
+    BOOT_SCREEN_SECONDS,
     INPUT_MODE,
     KIWIX_ENABLED,
     LIBRARY_DIR,
@@ -15,12 +20,19 @@ from config import (
     TERMINAL_HISTORY_LIMIT,
 )
 from display import DisplayError, EpaperDisplay
-from input_common import InputError, InputEvent, InputSource, command_for_event
+from input_common import (
+    EVENT_FULL_REFRESH,
+    InputError,
+    InputEvent,
+    InputSource,
+    command_for_event,
+)
 from input_factory import INPUT_MODES, create_input_source
 from library import KiwixProvider, LibraryProviderRegistry, LocalLibraryProvider
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
+from pages.games import GamesPage
 from pages.library import LibraryPage
 from pages.notes import NotesPage
 from pages.tasks import TasksPage
@@ -33,6 +45,14 @@ from services import (
 )
 from tasks_store import TasksStore, TasksStoreError
 from terminal_history import TerminalHistoryStore
+
+
+class TerminationRequested(BaseException):
+    """Raised by the SIGTERM handler so normal cleanup can run."""
+
+
+def handle_sigterm(_signum: int, _frame: Optional[FrameType]) -> None:
+    raise TerminationRequested
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -70,6 +90,34 @@ def render_current_view(
             "No page is registered for '{0}'.".format(menu.current_view)
         ) from exc
     return page.render(display)
+
+
+def show_startup(
+    display: EpaperDisplay,
+    menu: MenuController,
+    pages: Dict[str, BasePage],
+    sleeper: Callable[[float], None] = time.sleep,
+) -> bool:
+    """Show the hardware boot frame, then force a clean main-menu frame."""
+    if display.enabled:
+        display.show_boot_screen(BOOT_LOGO_PATH)
+        sleeper(BOOT_SCREEN_SECONDS)
+        display.request_full_refresh()
+    return render_current_view(display, menu, pages)
+
+
+def handle_full_refresh_event(
+    event: InputEvent,
+    display: EpaperDisplay,
+    menu: MenuController,
+    pages: Dict[str, BasePage],
+) -> bool:
+    """Handle the global refresh event before page-specific text input."""
+    if event.kind != EVENT_FULL_REFRESH:
+        return False
+    display.request_full_refresh()
+    render_current_view(display, menu, pages)
+    return True
 
 
 def handle_notes_command(
@@ -209,6 +257,27 @@ def handle_library_command(
     return False
 
 
+def handle_games_command(
+    command: str,
+    games_page: GamesPage,
+    menu: MenuController,
+) -> bool:
+    if command == "up":
+        return games_page.move_up()
+    if command == "down":
+        return games_page.move_down()
+    if command == "select":
+        result = games_page.select()
+        if result == "back":
+            return menu.back()
+        return result == "changed"
+    if command == "back":
+        if games_page.back_to_menu():
+            return True
+        return menu.back()
+    return False
+
+
 def handle_command(
     command: str,
     menu: MenuController,
@@ -236,6 +305,8 @@ def handle_command(
             )
         if isinstance(page, LibraryPage):
             return handle_library_command(command, page, menu)
+        if isinstance(page, GamesPage):
+            return handle_games_command(command, page, menu)
         if command == "back":
             return menu.back()
         return False
@@ -271,6 +342,10 @@ def handle_command(
             terminal_page = pages[TerminalPage.key]
             if isinstance(terminal_page, TerminalPage):
                 terminal_page.open_terminal()
+        elif changed and menu.current_view == GamesPage.key:
+            games_page = pages[GamesPage.key]
+            if isinstance(games_page, GamesPage):
+                games_page.open_menu()
         return changed
     if command == "back":
         return menu.back()
@@ -279,6 +354,7 @@ def handle_command(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
+    previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
     display: Optional[EpaperDisplay] = None
     input_source: Optional[InputSource] = None
     library_providers: Optional[LibraryProviderRegistry] = None
@@ -287,6 +363,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     exit_code = 0
 
     try:
+        signal.signal(signal.SIGTERM, handle_sigterm)
         setup_data()
         input_source = create_input_source(args.input)
         print("Input source: {0}".format(input_source.name))
@@ -309,10 +386,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 TERMINAL_HISTORY_FILE, TERMINAL_HISTORY_LIMIT
             ),
         )
-        render_current_view(display, menu, pages)
+        show_startup(display, menu, pages)
 
         while True:
             event = input_source.read_event()
+            if handle_full_refresh_event(event, display, menu, pages):
+                continue
             if not menu.is_main_menu() and menu.current_view == LibraryPage.key:
                 library_page = pages[LibraryPage.key]
                 if not isinstance(library_page, LibraryPage):
@@ -364,6 +443,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 break
     except KeyboardInterrupt:
         print("\nStopping Cyberdeck.")
+    except TerminationRequested:
+        print("\nStopping Cyberdeck after SIGTERM.")
     except NotesStoreError as exc:
         print("Notes error: {0}".format(exc), file=sys.stderr)
         exit_code = 1
@@ -381,6 +462,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         traceback.print_exc()
         exit_code = 1
     finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         if library_providers is not None:
             library_providers.close()
         if input_source is not None:
@@ -393,6 +475,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except DisplayError as exc:
                 print("Shutdown warning: {0}".format(exc), file=sys.stderr)
                 exit_code = 1
+        signal.signal(signal.SIGTERM, previous_sigterm_handler)
 
     if requested_power_action is not None:
         try:
@@ -415,7 +498,10 @@ def _print_unknown_input(event: InputEvent) -> None:
     if event.code is not None:
         print("Unsupported input code {0}; ignoring.".format(event.code))
         return
-    print("Unknown command. Use arrows, Enter, Esc, w, s, b, d, or q.")
+    print(
+        "Unknown command. Use arrows, Enter, Esc, w, s, b, d, q, "
+        "or :refresh."
+    )
 
 
 if __name__ == "__main__":

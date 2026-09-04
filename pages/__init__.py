@@ -11,16 +11,16 @@ from tasks_store import TasksStore
 from terminal_history import TerminalHistoryStore
 
 from .base import BasePage
+from .games import GamesPage
 from .library import LibraryPage
 from .notes import NotesPage
-from .sync import SyncPage
 from .tasks import TasksPage
 from .terminal import TerminalPage
 from .tools import ToolsPage
 
 
 STATIC_PAGE_TYPES = (
-    SyncPage,
+    GamesPage,
 )
 
 

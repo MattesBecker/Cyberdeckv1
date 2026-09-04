@@ -5,6 +5,7 @@ from input_common import (
     EVENT_ENTER,
     EVENT_EOF,
     EVENT_ESCAPE,
+    EVENT_FULL_REFRESH,
     EVENT_TEXT,
     EVENT_UP,
     InputEvent,
@@ -30,11 +31,13 @@ class CLIInputSource(InputSource):
 
     def read_event(self) -> InputEvent:
         try:
-            value = input("Command [w/s/Enter/b/d/q]: ").strip()
+            value = input("Command [w/s/Enter/b/d/q/:refresh]: ").strip()
         except EOFError:
             return InputEvent(EVENT_EOF)
         if not value:
             return InputEvent(EVENT_ENTER, code=13)
+        if value.lower() == ":refresh":
+            return InputEvent(EVENT_FULL_REFRESH)
         cli_navigation = {
             "w": EVENT_UP,
             "s": EVENT_DOWN,

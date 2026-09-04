@@ -16,6 +16,8 @@ Leichtgewichtige Menübasis für ein kleines, offline nutzbares Cyberdeck.
 - Das eingerichtete Waveshare-Repository ist vorhanden.
 - Pillow ist installiert, entweder mit `pip3 install -r requirements.txt` oder
   unter Raspberry Pi OS mit `sudo apt install python3-pil`.
+- DejaVu Sans ist für Umlaute und Sonderzeichen installiert:
+  `sudo apt install fonts-dejavu-core`.
 - Für I2C ist `smbus2` aus `requirements.txt` oder alternativ das Paket
   `python3-smbus` installiert.
 - Für Wikipedia ist `/usr/bin/kiwix-serve` vorhanden und die deutsche ZIM liegt
@@ -39,6 +41,12 @@ python3 app.py
 Standardmäßig wird `--input=auto` verwendet: Eine erreichbare CardKB wird
 verwendet, andernfalls bleibt die blockierende CLI-/SSH-Eingabe aktiv.
 
+Auf echtem E-Paper zeigt die App zuerst drei Sekunden lang das monochrome
+Boot-Logo aus `assets/boot_logo.png`. Fehlt das Asset oder ist es ungültig,
+erscheint stattdessen ein textbasierter Bootscreen. Das anschließende
+Hauptmenü wird immer mit einem Full Refresh aufgebaut. Im `--no-display`-Modus
+wird der Bootscreen samt Wartezeit übersprungen.
+
 ```sh
 python3 app.py --input=cardkb
 python3 app.py --input=cli
@@ -58,6 +66,7 @@ python3 app.py --no-display --input=cli
 - `Enter` = auswählen
 - `b` = zurück
 - `d` = geöffnete Notiz oder ausgewählte Aufgabe löschen
+- `:refresh` = aktuell sichtbare Ansicht mit Full Refresh neu aufbauen
 - `q` = beenden
 
 Die Eingabe blockiert bis zum nächsten Befehl. Dadurch entsteht keine
@@ -83,6 +92,7 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 
 - `app.py`: Einstieg, Setup, Eingabeschleife und Cleanup
 - `config.py`: zentrale Pfade, Displaywerte und Menüeinträge
+- `assets/boot_logo.png`: monochromes, lokal geladenes Boot-Logo
 - `display.py`: Rendering und einziger Zugriff auf die Waveshare-Library
 - `menu.py`: hardwareunabhängiger Navigationszustand
 - `input_common.py`: gemeinsame InputEvents und Eingabe-Schnittstelle
@@ -100,6 +110,8 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `services/system_info.py`: `/proc`-Systemwerte und bestätigte Power-Aktionen
 - `services/network_info.py`: `nmcli`-WLAN-Status und sicherer Einzel-Ping
 - `pages/`: kleine, unabhängige UI-Seiten
+- `pages/games.py`: vorbereitete Games-Auswahl ohne implementierte Spiele
+- `systemd/cyberdeck.service`: Vorlage für den Autostart als Benutzer `pi`
 - `data/`: lokale Notizen, Aufgaben und Bibliotheksdateien
 - `data/library/`: lokale `.txt`- und `.md`-Dokumente
 - `data/zim/`: lokale, von Git ausgeschlossene ZIM-Datei
@@ -185,6 +197,58 @@ Reboot und Shutdown zeigen die Bestätigung auf dem Display und benötigen eine
 ausdrückliche `y`-Bestätigung; `n` oder `Esc` brechen ab. Im
 `--no-display`-Modus werden beide Aktionen ausschließlich simuliert und kein
 Systembefehl ausgeführt.
+
+## Games
+
+Der Hauptmenüpunkt `Games` öffnet eine kleine vorbereitete Auswahl für `Snake`
+und `Pong`. Beide Einträge zeigen in dieser Version ausschließlich
+`Coming soon`; es werden noch keine Spiele oder zusätzlichen Abhängigkeiten
+geladen. Der bisherige Sync-Placeholder ist nicht mehr in der sichtbaren UI
+registriert.
+
+## Manueller Full Refresh
+
+Ein eigenes globales `FULL_REFRESH`-Input-Event baut die gerade sichtbare
+Ansicht vollständig neu auf und setzt danach den Partial-Refresh-Zähler zurück.
+In der CLI kann dieses Event mit `:refresh` ausgelöst werden. Es ist bewusst
+kein normales einzelnes ASCII-Zeichen belegt, damit Notes-, Library- und
+Terminal-Eingaben nicht gestört werden. Ein konkreter CardKB-Fn-Code kann
+später zentral in der Input-Schicht ergänzt werden.
+
+## Autostart mit systemd
+
+Die versionierte Service-Vorlage startet das Cyberdeck als Benutzer `pi`, ohne
+auf das Netzwerk zu warten. Sie verwendet `/home/pi/cyberdeck` als
+Arbeitsverzeichnis und startet die automatische CardKB-/CLI-Auswahl.
+
+Installation und Start:
+
+```sh
+cd /home/pi/cyberdeck
+sudo cp systemd/cyberdeck.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable cyberdeck.service
+sudo systemctl start cyberdeck.service
+```
+
+Status und Logs:
+
+```sh
+systemctl status cyberdeck.service
+journalctl -u cyberdeck.service
+```
+
+Stoppen und Autostart deaktivieren:
+
+```sh
+sudo systemctl stop cyberdeck.service
+sudo systemctl disable cyberdeck.service
+```
+
+Bei einem unerwarteten Fehler wartet systemd drei Sekunden vor einem Neustart.
+Ein reguläres `SIGTERM` beim Stoppen läuft durch das normale App-Cleanup: ein
+von der App gestarteter Kiwix-Prozess wird beendet, die Eingabe geschlossen und
+das Display schlafen gelegt.
 
 ## Tests
 

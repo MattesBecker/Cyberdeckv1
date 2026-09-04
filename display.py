@@ -33,6 +33,7 @@ class EpaperDisplay:
         self.partial_refresh_count = 0
         self.partial_refresh_limit = 10
         self.partial_ready = False
+        self._force_next_full_refresh = False
         self.body_line_count = 5
         self._epd = None
         self._initialized = False
@@ -90,6 +91,63 @@ class EpaperDisplay:
 
     def _new_image(self) -> Image.Image:
         return Image.new("1", (self.width, self.height), 1)
+
+    def show_boot_screen(self, logo_path: Path) -> bool:
+        """Render one centered monochrome boot frame with a text fallback."""
+        image = self._new_image()
+        preview_lines = ["CYBERDECK", "Starting..."]
+
+        try:
+            with Image.open(str(logo_path)) as source:
+                source.load()
+                rgba_logo = source.convert("RGBA")
+            white_background = Image.new(
+                "RGBA", rgba_logo.size, (255, 255, 255, 255)
+            )
+            white_background.alpha_composite(rgba_logo)
+            logo = white_background.convert("L")
+            resampling = getattr(Image, "Resampling", Image)
+            logo.thumbnail(
+                (max(1, self.width - 20), max(1, self.height - 20)),
+                resample=resampling.LANCZOS,
+            )
+            dither = getattr(Image, "Dither", Image)
+            logo = logo.convert("1", dither=dither.NONE)
+            position = (
+                (self.width - logo.width) // 2,
+                (self.height - logo.height) // 2,
+            )
+            image.paste(logo, position)
+            preview_lines = ["[boot logo]"]
+        except Exception as exc:
+            logger.warning(
+                "Boot logo unavailable at %s; using text fallback: %s",
+                logo_path,
+                exc,
+            )
+            draw = ImageDraw.Draw(image)
+            title = "CYBERDECK"
+            subtitle = "STARTING"
+            title_box = draw.textbbox((0, 0), title, font=self._title_font)
+            subtitle_box = draw.textbbox((0, 0), subtitle, font=self._font)
+            draw.text(
+                ((self.width - (title_box[2] - title_box[0])) // 2, 42),
+                title,
+                font=self._title_font,
+                fill=0,
+            )
+            draw.text(
+                ((self.width - (subtitle_box[2] - subtitle_box[0])) // 2, 65),
+                subtitle,
+                font=self._font,
+                fill=0,
+            )
+
+        return self.refresh_full(image, preview_lines=preview_lines)
+
+    def request_full_refresh(self) -> None:
+        """Force the next rendered frame to refresh fully, even if unchanged."""
+        self._force_next_full_refresh = True
 
     def render_menu(
         self, items: Sequence[MenuItem], selected_index: int
@@ -261,7 +319,11 @@ class EpaperDisplay:
             )
 
         monochrome, frame_data = self._prepare_frame(image)
-        if frame_data == self.last_frame:
+        force_full = self._force_next_full_refresh
+        self._force_next_full_refresh = False
+        if force_full:
+            mode = "full"
+        if frame_data == self.last_frame and not force_full:
             logger.debug("Skipping refresh: frame unchanged")
             return False
 

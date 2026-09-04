@@ -1,0 +1,17 @@
+[Unit]
+Description=Cyberdeck e-paper interface
+After=local-fs.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/cyberdeck
+ExecStart=/usr/bin/python3 /home/pi/cyberdeck/app.py --input=auto
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

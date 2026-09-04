@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "assets"
 DATA_DIR = BASE_DIR / "data"
 NOTES_DIR = DATA_DIR / "notes"
 LIBRARY_DIR = DATA_DIR / "library"
@@ -36,6 +37,8 @@ WAVESHARE_LIB_PATH = Path(
 DISPLAY_WIDTH = 250
 DISPLAY_HEIGHT = 122
 DISPLAY_MODEL = "epd2in13_V3"
+BOOT_LOGO_PATH = ASSETS_DIR / "boot_logo.png"
+BOOT_SCREEN_SECONDS = 3.0
 
 MENU_ITEMS = [
     ("Notes", "notes"),
@@ -43,5 +46,5 @@ MENU_ITEMS = [
     ("Terminal", "terminal"),
     ("Library", "library"),
     ("Tools", "tools"),
-    ("Sync", "sync"),
+    ("Games", "games"),
 ]
