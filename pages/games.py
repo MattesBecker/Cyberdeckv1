@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Optional
 
+from config import WORDLE_ALLOWED_FILE, WORDLE_SOLUTIONS_FILE
 from game_logic import Game2048, GameStatsStore, Minesweeper, Sudoku4, TicTacToe
 from input_common import (
     EVENT_CHARACTER, EVENT_DOWN, EVENT_ENTER, EVENT_EOF, EVENT_ESCAPE,
@@ -8,6 +9,10 @@ from input_common import (
 )
 
 from .base import BasePage
+from .battleship import BattleshipPage
+from .blackjack import BlackjackPage
+from .connect_four import ConnectFourPage
+from .wordle import WordlePage
 
 if TYPE_CHECKING:
     from display import EpaperDisplay
@@ -16,6 +21,12 @@ if TYPE_CHECKING:
 class _MemoryStats:
     def __init__(self) -> None:
         self.high = 0
+        self.sections = {
+            "wordle": dict(GameStatsStore.WORDLE_DEFAULTS),
+            "connect_four": dict(GameStatsStore.CONNECT_FOUR_DEFAULTS),
+            "battleship": dict(GameStatsStore.BATTLESHIP_DEFAULTS),
+            "blackjack": dict(GameStatsStore.BLACKJACK_DEFAULTS),
+        }
 
     def high_score_2048(self) -> int:
         return self.high
@@ -23,6 +34,50 @@ class _MemoryStats:
     def update_2048(self, score: int) -> int:
         self.high = max(self.high, score)
         return self.high
+
+    def wordle_stats(self):
+        return dict(self.sections["wordle"])
+
+    def record_wordle(self, won: bool):
+        stats = self.sections["wordle"]
+        stats["played"] += 1
+        if won:
+            stats["wins"] += 1
+            stats["current_streak"] += 1
+            stats["best_streak"] = max(stats["best_streak"], stats["current_streak"])
+        else:
+            stats["current_streak"] = 0
+        return dict(stats)
+
+    def record_connect_four(self, result: str):
+        field = {"player": "player_wins", "cpu": "cpu_wins", "draw": "draws"}[result]
+        self.sections["connect_four"][field] += 1
+        return dict(self.sections["connect_four"])
+
+    def record_battleship(self, cpu_won: bool):
+        stats = self.sections["battleship"]
+        stats["cpu_games"] += 1
+        stats["cpu_wins" if cpu_won else "cpu_losses"] += 1
+        return dict(stats)
+
+    def blackjack_stats(self):
+        return dict(self.sections["blackjack"])
+
+    def record_blackjack(self, result: str, balance: int):
+        stats = self.sections["blackjack"]
+        stats["hands"] += 1
+        if result in ("blackjack", "win"):
+            stats["wins"] += 1
+        elif result == "loss":
+            stats["losses"] += 1
+        else:
+            stats["pushes"] += 1
+        stats["balance"] = max(0, int(balance))
+        return dict(stats)
+
+    def reset_blackjack_balance(self):
+        self.sections["blackjack"]["balance"] = 1000
+        return dict(self.sections["blackjack"])
 
 
 class GamesPage(BasePage):
@@ -35,13 +90,28 @@ class GamesPage(BasePage):
     TTT_TWO_PLAYER_MODE = "tic_tac_toe_two_player"
     SUDOKU_MODE = "sudoku"
     MINES_MODE = "minesweeper"
-    MENU_ITEMS = ("2048", "Tic-Tac-Toe", "Sudoku", "Minesweeper", "Back")
+    WORDLE_MODE = "wordle"
+    CONNECT_FOUR_MODE = "connect_four"
+    BATTLESHIP_MODE = "battleship"
+    BLACKJACK_MODE = "blackjack"
+    MENU_ITEMS = (
+        "2048",
+        "Tic-Tac-Toe",
+        "Sudoku",
+        "Minesweeper",
+        "Wordle",
+        "Connect Four",
+        "Battleship",
+        "Blackjack",
+        "Back",
+    )
     TTT_MENU_ITEMS = ("1 Player", "2 Players", "Back")
 
     def __init__(self, stats_store: Optional[GameStatsStore] = None) -> None:
         self.stats_store = stats_store or _MemoryStats()
         self.mode = self.MENU_MODE
         self.selected_index = 0
+        self.list_offset = 0
         self.cursor = 0
         self.message = ""
         self.game_2048 = Game2048()
@@ -50,6 +120,12 @@ class GamesPage(BasePage):
         self.sudoku = Sudoku4()
         self.minesweeper = Minesweeper()
         self.high_score = self.stats_store.high_score_2048()
+        self.wordle_page = WordlePage(
+            WORDLE_SOLUTIONS_FILE, WORDLE_ALLOWED_FILE, self.stats_store
+        )
+        self.connect_four_page = ConnectFourPage(self.stats_store)
+        self.battleship_page = BattleshipPage(self.stats_store)
+        self.blackjack_page = BlackjackPage(self.stats_store)
 
     @property
     def ttt_board(self):
@@ -62,6 +138,7 @@ class GamesPage(BasePage):
     def open_menu(self) -> None:
         self.mode = self.MENU_MODE
         self.selected_index = 0
+        self.list_offset = 0
         self.message = ""
 
     def move_up(self) -> bool:
@@ -113,6 +190,13 @@ class GamesPage(BasePage):
     def handle_event(self, event: InputEvent) -> str:
         if event.kind == EVENT_EOF:
             return "quit"
+        extra_page = self._active_extra_page()
+        if extra_page is not None:
+            action = extra_page.handle_event(event)
+            if action == "back":
+                self.open_menu()
+                return "changed"
+            return action
         if event.kind == EVENT_ESCAPE:
             return "changed" if self.back_to_menu() else "back"
         if self.mode in (self.MENU_MODE, self.TTT_MENU_MODE):
@@ -153,6 +237,9 @@ class GamesPage(BasePage):
         return "invalid"
 
     def render(self, display: "EpaperDisplay") -> bool:
+        extra_page = self._active_extra_page()
+        if extra_page is not None:
+            return extra_page.render(display)
         if self.mode == self.GAME_2048_MODE:
             rows = [" ".join("{0:4}".format(value or ".") for value in row) for row in self.game_2048.board]
             return display.render_grid_page("2048 S:{0}".format(self.game_2048.score), rows, self.message or "arrows Esc")
@@ -173,7 +260,14 @@ class GamesPage(BasePage):
             return display.render_grid_page("SUDOKU 4x4", self._sudoku_lines(), self.message or "1-4 0:clear Esc")
         if self.mode == self.MINES_MODE:
             return display.render_grid_page("MINES 8x5", self._mine_lines(), self.message or "Enter f:flag Esc")
-        lines = [("> " if index == self.selected_index else "  ") + label for index, label in enumerate(self.MENU_ITEMS)]
+        row_count = max(1, getattr(display, "body_line_count", 5))
+        self._keep_menu_visible(row_count)
+        end = min(self.list_offset + row_count, len(self.MENU_ITEMS))
+        lines = [
+            ("> " if index == self.selected_index else "  ")
+            + self.MENU_ITEMS[index]
+            for index in range(self.list_offset, end)
+        ]
         return display.render_page(self.title, lines, "w/s Enter b")
 
     def _start(self, selected: str) -> None:
@@ -190,10 +284,22 @@ class GamesPage(BasePage):
             self.sudoku.new_game()
             self.mode = self.SUDOKU_MODE
             self.message = "Fill 1-4"
-        else:
+        elif selected == "Minesweeper":
             self.minesweeper.reset()
             self.mode = self.MINES_MODE
             self.message = "First move is safe"
+        elif selected == "Wordle":
+            self.mode = self.WORDLE_MODE
+            self.wordle_page.open()
+        elif selected == "Connect Four":
+            self.mode = self.CONNECT_FOUR_MODE
+            self.connect_four_page.open()
+        elif selected == "Battleship":
+            self.mode = self.BATTLESHIP_MODE
+            self.battleship_page.open()
+        elif selected == "Blackjack":
+            self.mode = self.BLACKJACK_MODE
+            self.blackjack_page.open()
 
     def _restart_current(self) -> None:
         if self.mode in (self.TTT_MODE, self.TTT_TWO_PLAYER_MODE):
@@ -310,6 +416,24 @@ class GamesPage(BasePage):
         if self.mode == self.TTT_MENU_MODE:
             return self.TTT_MENU_ITEMS
         return self.MENU_ITEMS
+
+    def _active_extra_page(self):
+        return {
+            self.WORDLE_MODE: self.wordle_page,
+            self.CONNECT_FOUR_MODE: self.connect_four_page,
+            self.BATTLESHIP_MODE: self.battleship_page,
+            self.BLACKJACK_MODE: self.blackjack_page,
+        }.get(self.mode)
+
+    def _keep_menu_visible(self, row_count: int) -> None:
+        if self.selected_index < self.list_offset:
+            self.list_offset = self.selected_index
+        elif self.selected_index >= self.list_offset + row_count:
+            self.list_offset = self.selected_index - row_count + 1
+        self.list_offset = min(
+            self.list_offset,
+            max(0, len(self.MENU_ITEMS) - row_count),
+        )
 
     def _update_2048_message(self) -> None:
         if self.game_2048.won: self.message = "2048! Enter:new"

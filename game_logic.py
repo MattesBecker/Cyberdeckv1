@@ -6,21 +6,127 @@ from json_store import JSONStoreError, load_json, save_json
 
 
 class GameStatsStore:
+    WORDLE_DEFAULTS = {
+        "played": 0,
+        "wins": 0,
+        "current_streak": 0,
+        "best_streak": 0,
+    }
+    CONNECT_FOUR_DEFAULTS = {
+        "cpu_wins": 0,
+        "player_wins": 0,
+        "draws": 0,
+    }
+    BATTLESHIP_DEFAULTS = {
+        "cpu_games": 0,
+        "cpu_wins": 0,
+        "cpu_losses": 0,
+    }
+    BLACKJACK_DEFAULTS = {
+        "hands": 0,
+        "wins": 0,
+        "losses": 0,
+        "pushes": 0,
+        "balance": 1000,
+    }
+
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
 
     def high_score_2048(self) -> int:
-        raw = load_json(self.path, {})
+        raw = self._load()
         value = raw.get("high_score_2048", 0) if isinstance(raw, dict) else 0
         return value if isinstance(value, int) and value >= 0 else 0
 
     def update_2048(self, score: int) -> int:
         high = max(self.high_score_2048(), max(0, int(score)))
-        try:
-            save_json(self.path, {"high_score_2048": high})
-        except JSONStoreError:
-            return high
+        data = self._load()
+        data["high_score_2048"] = high
+        self._save(data)
         return high
+
+    def wordle_stats(self):
+        return self._section("wordle", self.WORDLE_DEFAULTS)
+
+    def record_wordle(self, won: bool):
+        stats = self.wordle_stats()
+        stats["played"] += 1
+        if won:
+            stats["wins"] += 1
+            stats["current_streak"] += 1
+            stats["best_streak"] = max(
+                stats["best_streak"], stats["current_streak"]
+            )
+        else:
+            stats["current_streak"] = 0
+        return self._update_section("wordle", stats)
+
+    def connect_four_stats(self):
+        return self._section("connect_four", self.CONNECT_FOUR_DEFAULTS)
+
+    def record_connect_four(self, result: str):
+        fields = {"player": "player_wins", "cpu": "cpu_wins", "draw": "draws"}
+        if result not in fields:
+            raise ValueError("Invalid Connect Four result")
+        stats = self.connect_four_stats()
+        stats[fields[result]] += 1
+        return self._update_section("connect_four", stats)
+
+    def battleship_stats(self):
+        return self._section("battleship", self.BATTLESHIP_DEFAULTS)
+
+    def record_battleship(self, won: bool):
+        stats = self.battleship_stats()
+        stats["cpu_games"] += 1
+        stats["cpu_wins" if won else "cpu_losses"] += 1
+        return self._update_section("battleship", stats)
+
+    def blackjack_stats(self):
+        return self._section("blackjack", self.BLACKJACK_DEFAULTS)
+
+    def record_blackjack(self, result: str, balance: int):
+        if result not in ("blackjack", "win", "loss", "push"):
+            raise ValueError("Invalid Blackjack result")
+        stats = self.blackjack_stats()
+        stats["hands"] += 1
+        if result in ("blackjack", "win"):
+            stats["wins"] += 1
+        elif result == "loss":
+            stats["losses"] += 1
+        else:
+            stats["pushes"] += 1
+        stats["balance"] = max(0, int(balance))
+        return self._update_section("blackjack", stats)
+
+    def reset_blackjack_balance(self):
+        stats = self.blackjack_stats()
+        stats["balance"] = self.BLACKJACK_DEFAULTS["balance"]
+        return self._update_section("blackjack", stats)
+
+    def _load(self):
+        raw = load_json(self.path, {})
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _section(self, name: str, defaults):
+        raw = self._load().get(name, {})
+        raw = raw if isinstance(raw, dict) else {}
+        values = {}
+        for key, default in defaults.items():
+            value = raw.get(key, default)
+            values[key] = value if isinstance(value, int) and value >= 0 else default
+        return values
+
+    def _update_section(self, name: str, values):
+        data = self._load()
+        data[name] = dict(values)
+        self._save(data)
+        return dict(values)
+
+    def _save(self, data) -> None:
+        try:
+            save_json(self.path, data)
+        except JSONStoreError:
+            pass
 
 
 class Game2048:

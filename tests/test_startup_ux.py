@@ -55,6 +55,11 @@ class FakePageDisplay:
         self.last = (title, list(lines), footer)
         return True
 
+    def render_compact_grid_page(self, title, lines, footer):
+        self.renderer = "compact_grid"
+        self.last = (title, list(lines), footer)
+        return True
+
 
 class StartupSequenceTest(unittest.TestCase):
     def test_bootscreen_waits_half_second_then_forces_full_main_menu(self):
@@ -202,6 +207,15 @@ class BootScreenDisplayTest(unittest.TestCase):
         )
         self.assertGreater(display._grid_cell_width, 0)
 
+    def test_compact_grid_renders_all_seven_connect_four_rows(self):
+        display = EpaperDisplay(enabled=False)
+        display.initialize()
+        lines = ["row {0}".format(index) for index in range(7)]
+        with patch.object(display, "refresh", return_value=True) as refresh:
+            display.render_compact_grid_page("GRID", lines, "footer")
+        preview = refresh.call_args.kwargs["preview_lines"]
+        self.assertIn("row 6", preview)
+
 
 class GamesPageTest(unittest.TestCase):
     def setUp(self):
@@ -213,8 +227,9 @@ class GamesPageTest(unittest.TestCase):
         self.assertEqual(self.display.last[0], "GAMES")
         self.assertEqual(
             self.display.last[1],
-            ["> 2048", "  Tic-Tac-Toe", "  Sudoku", "  Minesweeper", "  Back"],
+            ["> 2048", "  Tic-Tac-Toe", "  Sudoku", "  Minesweeper", "  Wordle"],
         )
+        self.assertEqual(len(self.page.MENU_ITEMS), 9)
 
     def test_tic_tac_toe_starts_and_accepts_move(self):
         self.page.move_down()

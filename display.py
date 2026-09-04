@@ -244,20 +244,51 @@ class EpaperDisplay:
         self, title: str, lines: Sequence[str], footer: str = "b: back"
     ) -> bool:
         """Render fixed-width rows for game boards and other text grids."""
+        return self._render_grid_page(
+            title,
+            lines,
+            footer,
+            line_limit=self.body_line_count,
+            body_y=28,
+            line_height=16,
+        )
+
+    def render_compact_grid_page(
+        self, title: str, lines: Sequence[str], footer: str = "b: back"
+    ) -> bool:
+        """Fit up to seven fixed-width rows on the 250x122 display."""
+        return self._render_grid_page(
+            title,
+            lines,
+            footer,
+            line_limit=7,
+            body_y=20,
+            line_height=12,
+        )
+
+    def _render_grid_page(
+        self,
+        title: str,
+        lines: Sequence[str],
+        footer: str,
+        line_limit: int,
+        body_y: int,
+        line_height: int,
+    ) -> bool:
         try:
             image = self._new_image()
             draw = ImageDraw.Draw(image)
             visible_title = self.truncate_text(title, font=self._title_font)
             visible_lines = [
                 self._truncate_grid_text(line)
-                for line in list(lines)[: self.body_line_count]
+                for line in list(lines)[:line_limit]
             ]
             draw.text((5, 4), visible_title, font=self._title_font, fill=0)
 
-            y = 28
+            y = body_y
             for line in visible_lines:
                 self._draw_grid_text(draw, 5, y, line)
-                y += 16
+                y += line_height
 
             visible_footer = self.truncate_text(footer)
             draw.text(

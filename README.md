@@ -108,14 +108,20 @@ Settings speichert validierte Runtime-Werte atomar in `data/settings.json`: Boot
 
 ### Games
 
-`Games` enthält vier vollständige Spiele ohne Animation oder Frame-Loop:
+`Games` enthält acht vollständige Spiele ohne Animation oder Frame-Loop. Das Menü scrollt automatisch und hält den gewählten Eintrag sichtbar:
 
 - **2048** auf 4×4 mit korrekten Einzel-Merges, zufälligen 2/4-Tiles, Gewinn/Game Over und persistentem Highscore
 - **Tic-Tac-Toe** wahlweise gegen die CPU oder lokal zu zweit; im Zweispielermodus wechseln X und O nach jedem gültigen Zug
 - **Sudoku** als lesbares 4×4 mit mehreren eingebetteten Puzzles, festen Zellen, Konflikt- und Lösungsprüfung
 - **Minesweeper** auf 8×5 mit sieben Minen, sicherem ersten Zug, Flags, Nachbarzahlen, Flood-Reveal sowie Gewinn/Game Over
+- **Wordle** mit lokalen deutschen Fünfbuchstaben-Wörtern, sechs Versuchen und korrekter Behandlung doppelter Buchstaben. `[A]` bedeutet richtige Position, `(A)` bedeutet vorhandener Buchstabe an falscher Position, ` A ` bedeutet nicht enthalten. CardKB-Buchstaben füllen den Puffer, Backspace löscht und `Enter` bestätigt; in CLI kann das ganze Wort eingegeben werden.
+- **Connect Four** auf 7×6, wahlweise gegen CPU oder lokal zu zweit. Links/rechts wählt die Spalte, `Enter` wirft den Stein ein. Die CPU nimmt Gewinnzüge, blockiert unmittelbare Niederlagen und bewertet Mitte sowie eigene Reihen höher.
+- **Battleship** auf 6×6 mit Flotte 3/2/2/1, Auto- oder manueller Platzierung und CPU-/Zweispielermodus. Schiffe dürfen sich berühren, aber nicht überlappen. Bei manueller Platzierung dreht `r`, im Gefecht wechselt `v` zwischen eigenem und Ziel-Board. Die CPU nutzt Hunt/Target und verfolgt nach mehreren Treffern die erkannte Richtung. Der Zweispielermodus blendet zwischen Platzierung und jedem Zug einen privaten `PASS DEVICE`-Bildschirm ein.
+- **Blackjack** gegen den Dealer mit Standarddeck, dynamischer Asswertung, Dealer-Zug bis mindestens 17, Blackjack, Bust, Push und internen Einsätzen 10/25/50/100. Hoch/runter wählt Einsatz beziehungsweise Hit/Stand, `Enter` bestätigt. Es gibt keinen Echtgeldbezug.
 
 Pfeile steuern Board bzw. Cursor; in CLI stehen zusätzlich `w/s/a/d` zur Verfügung. `Enter` setzt bzw. öffnet, `f` setzt in Minesweeper ein Flag, Ziffern `1`–`4` füllen Sudoku und `0` leert ein editierbares Feld. `n` startet das aktuelle Spiel neu, `Esc` geht zurück. Die Spiele verwenden nur die vorhandene Display-Abstraktion.
+
+`data/game_stats.json` hält den 2048-Highscore, Wordle-Spiele/Siege/Streaks, Connect-Four-Ergebnisse gegen die CPU, Battleship-Ergebnisse gegen die CPU sowie Blackjack-Hände, Ergebnisse und Chipstand. Der Store schreibt atomar, erhält bestehende Statistikfelder und fällt bei beschädigten oder ungültigen Werten auf sichere Defaults zurück. Die Wordle-Listen liegen versioniert in `data/wordle_solutions.txt` und `data/wordle_words.txt`; es gibt keine Netzwerkabfrage.
 
 ## Lokale Daten
 
@@ -180,7 +186,8 @@ Der Dienst läuft als Benutzer `pi`, wartet nicht auf Netzwerk und nutzt `Restar
 - `input_cardkb.py`: CardKB-I2C-Treiber
 - `input_cli.py`: CLI/SSH-Eingabe
 - `library/`: Local- und Kiwix-Provider
-- `pages/`: UI-Seiten einschließlich Games
+- `games/`: unabhängige, leichtgewichtige Regellogik für Wordle, Connect Four, Battleship und Blackjack
+- `pages/`: UI-Seiten einschließlich aller Games
 - `services/`: System-, Netzwerk-, Calculator-, File-Viewer-, SSH- und Terminaldienste
 - `systemd/cyberdeck.service`: Autostart-Vorlage
 - `data/`: lokale Laufzeitdaten
@@ -203,5 +210,9 @@ Manuelle Prüfung auf dem Raspberry Pi Zero W:
 5. In File Viewer eine kleine UTF-8-Logdatei öffnen und Paging prüfen; ein Symlink nach außerhalb muss abgewiesen werden.
 6. Einen Key-basierten SSH-Shortcut ausführen sowie Timeout/unerreichbaren Host prüfen.
 7. Settings ändern, Service neu starten und Boot-/Start-/Kiwix-Einstellungen kontrollieren.
-8. Alle vier Games mit CardKB-Pfeilen spielen, beide Tic-Tac-Toe-Modi prüfen; bei Minesweeper `f` und bei Sudoku `1`–`4`/`0` testen.
-9. `python3 app.py --no-display --input=cli` starten und Dashboard, Menüs und Back-Navigation prüfen.
+8. Games-Menü bis `Back` durchscrollen und prüfen, dass jeder der neun Einträge sichtbar ausgewählt werden kann.
+9. Wordle mit CardKB-Buchstaben, Backspace, einem ungültigen Wort, sechs Fehlversuchen und einem Treffer testen; Markierungen `[]`/`()` kontrollieren.
+10. Connect Four in beiden Modi spielen: volle Spalte sowie horizontalen, vertikalen und diagonalen Sieg prüfen.
+11. Battleship automatisch und manuell platzieren (`r`), mit `v` beide Boards prüfen und im Zweispielermodus sicherstellen, dass vor jedem Spielerwechsel nur `PASS DEVICE` sichtbar ist.
+12. Blackjack mit allen Einsätzen spielen; Asswertung, Hit, Stand, Bust, Dealer Bust, Push, Blackjack und Balance-Reset bei leerem Konto prüfen.
+13. `python3 app.py --no-display --input=cli` starten, alle neuen Games öffnen und deren Back-Navigation prüfen.
