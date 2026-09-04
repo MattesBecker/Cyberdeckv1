@@ -1,8 +1,10 @@
 from .base import (
     ITEM_TYPE_BACK,
+    ITEM_TYPE_BOOKMARKS,
     ITEM_TYPE_DIRECTORY,
     ITEM_TYPE_DOCUMENT,
     ITEM_TYPE_SEARCH,
+    ITEM_TYPE_HISTORY,
     LibraryDocument,
     LibraryItem,
     LibraryProvider,
@@ -16,9 +18,11 @@ from .registry import LibraryProviderRegistry
 
 __all__ = [
     "ITEM_TYPE_BACK",
+    "ITEM_TYPE_BOOKMARKS",
     "ITEM_TYPE_DIRECTORY",
     "ITEM_TYPE_DOCUMENT",
     "ITEM_TYPE_SEARCH",
+    "ITEM_TYPE_HISTORY",
     "LibraryDocument",
     "LibraryItem",
     "LibraryProvider",

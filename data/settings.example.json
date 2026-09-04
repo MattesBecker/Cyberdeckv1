@@ -1,0 +1,10 @@
+{
+  "boot_enabled": true,
+  "boot_duration": 0.5,
+  "partial_refresh_max": 10,
+  "start_screen": "dashboard",
+  "kiwix_enabled": true,
+  "dashboard_wifi": true,
+  "dashboard_tasks": true,
+  "dashboard_storage": true
+}

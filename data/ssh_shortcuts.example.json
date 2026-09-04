@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Home Server",
+    "host": "192.168.178.20",
+    "user": "mattes",
+    "port": 22,
+    "command": "uptime"
+  }
+]

@@ -7,6 +7,8 @@ from urllib.error import URLError
 
 from library import (
     ITEM_TYPE_BACK,
+    ITEM_TYPE_BOOKMARKS,
+    ITEM_TYPE_HISTORY,
     ITEM_TYPE_SEARCH,
     KiwixProvider,
     KiwixProviderError,
@@ -94,7 +96,7 @@ class KiwixProviderTest(unittest.TestCase):
 
         self.assertEqual(
             [item.item_type for item in items],
-            [ITEM_TYPE_SEARCH, ITEM_TYPE_BACK],
+            [ITEM_TYPE_SEARCH, ITEM_TYPE_BOOKMARKS, ITEM_TYPE_HISTORY, ITEM_TYPE_BACK],
         )
         self.assertFalse(provider.owns_process)
         popen.assert_not_called()

@@ -9,8 +9,20 @@ LIBRARY_DIR = DATA_DIR / "library"
 ZIM_DIR = DATA_DIR / "zim"
 TASKS_FILE = DATA_DIR / "tasks.json"
 TERMINAL_HISTORY_FILE = DATA_DIR / "terminal_history.txt"
+WIKI_BOOKMARKS_FILE = DATA_DIR / "wiki_bookmarks.json"
+WIKI_HISTORY_FILE = DATA_DIR / "wiki_history.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
+SSH_SHORTCUTS_FILE = DATA_DIR / "ssh_shortcuts.json"
+GAME_STATS_FILE = DATA_DIR / "game_stats.json"
 TERMINAL_HISTORY_LIMIT = 20
 TERMINAL_COMMAND_TIMEOUT = 10.0
+WIKI_BOOKMARKS_LIMIT = 200
+WIKI_HISTORY_LIMIT = 50
+SSH_SHORTCUT_LIMIT = 100
+SSH_COMMAND_TIMEOUT = 12.0
+SSH_MAX_OUTPUT_CHARS = 256 * 1024
+FILE_VIEWER_ROOTS = (Path("/home/pi"), Path("/var/log"))
+FILE_VIEWER_MAX_BYTES = 256 * 1024
 
 KIWIX_ENABLED = True
 KIWIX_SERVER_PATH = Path("/usr/bin/kiwix-serve")
@@ -41,6 +53,8 @@ DISPLAY_HEIGHT = 122
 DISPLAY_MODEL = "epd2in13_V3"
 BOOT_LOGO_PATH = ASSETS_DIR / "boot_logo.png"
 BOOT_SCREEN_SECONDS = 0.5
+PARTIAL_REFRESH_LIMIT = 10
+DEFAULT_START_SCREEN = "dashboard"
 
 MENU_ITEMS = [
     ("Notes", "notes"),
@@ -49,4 +63,5 @@ MENU_ITEMS = [
     ("Library", "library"),
     ("Tools", "tools"),
     ("Games", "games"),
+    ("Settings", "settings"),
 ]

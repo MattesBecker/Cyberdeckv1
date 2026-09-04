@@ -29,7 +29,7 @@ python3 app.py --input=auto
 
 `--input=auto` verwendet die CardKB, wenn sie erreichbar ist, und fällt sonst auf CLI/SSH zurück.
 
-Beim Hardware-Start wird zuerst `assets/boot_logo.png` per Full Refresh angezeigt. Der Bootscreen bleibt 0,5 Sekunden sichtbar. Danach wird das Hauptmenü erneut mit einem Full Refresh aufgebaut. Im `--no-display`-Modus wird der Bootscreen samt Wartezeit übersprungen.
+Beim Hardware-Start wird zuerst `assets/boot_logo.png` per Full Refresh angezeigt. Der Bootscreen bleibt 0,5 Sekunden sichtbar. Danach erscheint das Dashboard mit einem erzwungenen Full Refresh. Im `--no-display`-Modus wird nur Bootscreen samt Wartezeit übersprungen; das Dashboard bleibt testbar. In Settings kann als Startansicht alternativ das Hauptmenü gewählt werden.
 
 ## Eingabe
 
@@ -72,30 +72,62 @@ Die Library enthält:
 
 - `Local files`: `.txt` und `.md` unter `data/library/`
 - `Wikipedia`: lokale deutsche Wikipedia über Kiwix
-- `Search`: für eine spätere providerübergreifende Suche reserviert
 
 Wikipedia läuft ausschließlich lokal über `127.0.0.1:8080`. Wenn dort noch kein Kiwix-Server läuft, startet der Provider selbst `kiwix-serve`. Ein von der App gestarteter Prozess wird beim Beenden wieder gestoppt; ein bereits vorhandener externer Server bleibt unangetastet.
 
 Die große ZIM-Datei wird durch `.gitignore` ausgeschlossen.
+
+Wikipedia bietet `Search`, `Bookmarks`, `History` und `Back`. In einem geöffneten Wikipedia-Artikel schaltet `m` das Bookmark ein oder aus. Bookmarks enthalten nur Provider, Artikel-ID, Titel und Zeitpunkt; Artikeltext wird nicht dupliziert. History wird beim Öffnen aktualisiert, hält höchstens 50 Artikel und kann nach Bestätigung vollständig geleert werden. `d` entfernt einen ausgewählten Bookmark- oder History-Eintrag.
+
+### Dashboard
+
+Nach dem Boot zeigt das Dashboard lokale Uhrzeit, WLAN, offene Tasks, Wikipedia-Bereitschaft und – wenn noch Platz ist – freien Speicher. Es benötigt kein Internet und startet Kiwix nicht. `Enter` oder Pfeil rechts öffnet das Hauptmenü. WLAN-, Task- und Speicherzeile lassen sich separat in Settings abschalten.
 
 ### Tools
 
 - Systeminfo
 - Netzwerkstatus
 - Ping
+- Calculator
+- File Viewer
+- SSH Shortcuts
 - Reboot
 - Shutdown
 
 Reboot und Shutdown benötigen eine Bestätigung. Im `--no-display`-Modus werden Power-Aktionen nur simuliert.
 
+Der Calculator unterstützt `+`, `-`, `*`, `/`, `%`, `^`, Vorzeichen, Dezimalzahlen und Klammern über einen eigenen Parser. Er verwendet weder `eval` noch Shell-Ausführung. Eingabe erfolgt direkt über CardKB bzw. als CLI-Zeile, `Enter` berechnet und `Esc` geht zurück.
+
+Der read-only File Viewer ist auf die in `config.py` definierten Roots `/home/pi` und `/var/log` begrenzt. Er öffnet nur unterstützte UTF-8-Textformate, folgt keinen Datei-Symlinks und liest höchstens 256 KiB. Größere Inhalte werden markiert abgeschnitten, Binärdateien und Pfade außerhalb der Roots abgewiesen. Hoch/runter blättert Listen oder Textseiten, `Enter` öffnet und `Esc` geht zurück.
+
+SSH Shortcuts werden ohne Secrets gespeichert und ausschließlich mit dem systemweiten `ssh`-Client, `BatchMode=yes`, deaktivierter Passwortauthentifizierung und Timeout ausgeführt. `Enter` startet, `e` bearbeitet, `d` löscht nach Bestätigung und `+ New shortcut` führt durch Name, Host, User, Port und Remote-Befehl. Es gibt keine interaktive PTY-Sitzung und keine lokale Shell-Verkettung.
+
+### Settings
+
+Settings speichert validierte Runtime-Werte atomar in `data/settings.json`: Bootscreen an/aus, Bootdauer, Partial-Refresh-Limit, Startansicht, Kiwix sowie Dashboard-Zeilen. Hoch/runter wählt, links/rechts oder `Enter` ändert. Das Partial-Limit greift sofort; Boot-, Start- und Kiwix-Einstellungen beim nächsten Programmstart. Kaputte Dateien fallen auf sichere Defaults zurück.
+
 ### Games
 
-`Games` enthält jetzt zwei kleine Spiele, die keine schnellen Bildraten benötigen:
+`Games` enthält vier vollständige Spiele ohne Animation oder Frame-Loop:
 
-- **Tic-Tac-Toe** gegen einen einfachen CPU-Gegner
-- **Minesweeper** auf einem kleinen 3×3-Feld
+- **2048** auf 4×4 mit korrekten Einzel-Merges, zufälligen 2/4-Tiles, Gewinn/Game Over und persistentem Highscore
+- **Tic-Tac-Toe** gegen eine CPU, die gewinnt, blockiert und Mitte/Ecken bevorzugt
+- **Sudoku** als lesbares 4×4 mit mehreren eingebetteten Puzzles, festen Zellen, Konflikt- und Lösungsprüfung
+- **Minesweeper** auf 8×5 mit sieben Minen, sicherem ersten Zug, Flags, Nachbarzahlen, Flood-Reveal sowie Gewinn/Game Over
 
-Die Auswahl innerhalb eines Spielfelds wird mit hoch/runter durch die neun Felder bewegt; `Enter` führt die Aktion aus, `b`/`Esc` geht zurück. Die Spiele verwenden nur die bestehende e-Paper-/PIL-Infrastruktur und keine zusätzliche Game-Engine.
+Pfeile steuern Board bzw. Cursor; in CLI stehen zusätzlich `w/s/a/d` zur Verfügung. `Enter` setzt bzw. öffnet, `f` setzt in Minesweeper ein Flag, Ziffern `1`–`4` füllen Sudoku und `0` leert ein editierbares Feld. `n` startet das aktuelle Spiel neu, `Esc` geht zurück. Die Spiele verwenden nur die vorhandene Display-Abstraktion.
+
+## Lokale Daten
+
+Nicht versionierte Runtime-Dateien:
+
+- `data/wiki_bookmarks.json`
+- `data/wiki_history.json`
+- `data/settings.json`
+- `data/ssh_shortcuts.json`
+- `data/game_stats.json`
+
+Beispiele liegen in `data/settings.example.json` und `data/ssh_shortcuts.example.json`. Alle neuen JSON-Stores schreiben UTF-8 atomar. Beschädigte Daten werden ignoriert und führen nicht zum Absturz der App.
 
 ## Refresh-Strategie
 
@@ -149,11 +181,11 @@ Der Dienst läuft als Benutzer `pi`, wartet nicht auf Netzwerk und nutzt `Restar
 - `input_cli.py`: CLI/SSH-Eingabe
 - `library/`: Local- und Kiwix-Provider
 - `pages/`: UI-Seiten einschließlich Games
-- `services/`: System-, Netzwerk- und Terminaldienste
+- `services/`: System-, Netzwerk-, Calculator-, File-Viewer-, SSH- und Terminaldienste
 - `systemd/cyberdeck.service`: Autostart-Vorlage
 - `data/`: lokale Laufzeitdaten
 
-Der frühere Sync-Placeholder wurde vollständig entfernt. Sync ist aktuell bewusst kein Bestandteil der sichtbaren Anwendung.
+Der frühere Sync-Eintrag wurde vollständig entfernt. Sync ist aktuell bewusst kein Bestandteil der sichtbaren Anwendung.
 
 ## Tests
 
@@ -161,3 +193,15 @@ Der frühere Sync-Placeholder wurde vollständig entfernt. Sync ist aktuell bewu
 python3 -m unittest discover -s tests -v
 python3 -m compileall .
 ```
+
+Manuelle Prüfung auf dem Raspberry Pi Zero W:
+
+1. Service neu starten und Bootlogo → 0,5 s → Dashboard kontrollieren.
+2. WLAN trennen und prüfen, dass das Dashboard `WiFi: offline` zeigt.
+3. Wikipedia-Artikel suchen, mit `m` bookmarken, über Bookmarks und History erneut öffnen und History leeren.
+4. Calculator mit `12*(3+2)`, `10/4`, `2^8` und `10/0` testen.
+5. In File Viewer eine kleine UTF-8-Logdatei öffnen und Paging prüfen; ein Symlink nach außerhalb muss abgewiesen werden.
+6. Einen Key-basierten SSH-Shortcut ausführen sowie Timeout/unerreichbaren Host prüfen.
+7. Settings ändern, Service neu starten und Boot-/Start-/Kiwix-Einstellungen kontrollieren.
+8. Alle vier Games mit CardKB-Pfeilen spielen; bei Minesweeper `f` und bei Sudoku `1`–`4`/`0` prüfen.
+9. `python3 app.py --no-display --input=cli` starten und Dashboard, Menüs und Back-Navigation prüfen.

@@ -1,14 +1,40 @@
 from typing import List, Optional
 
+from config import (
+    FILE_VIEWER_MAX_BYTES,
+    FILE_VIEWER_ROOTS,
+    SSH_COMMAND_TIMEOUT,
+    SSH_MAX_OUTPUT_CHARS,
+    SSH_SHORTCUT_LIMIT,
+    SSH_SHORTCUTS_FILE,
+)
+from input_common import (
+    EVENT_BACKSPACE,
+    EVENT_CHARACTER,
+    EVENT_ENTER,
+    EVENT_EOF,
+    EVENT_ESCAPE,
+    EVENT_TAB,
+    EVENT_TEXT,
+    InputEvent,
+)
+
 from services import (
     NetworkInfo,
     NetworkInfoService,
     PingResult,
     SystemInfo,
     SystemInfoService,
+    Calculator,
+    CalculatorError,
+    FileViewerService,
+    SSHShortcutService,
+    SSHShortcutStore,
 )
 
 from .base import BasePage
+from .file_viewer import FileViewerPage
+from .ssh_shortcuts import SSHShortcutsPage
 
 
 class ToolsPage(BasePage):
@@ -21,13 +47,27 @@ class ToolsPage(BasePage):
     PING_MODE = "ping"
     CONFIRM_MODE = "confirm"
     POWER_MODE = "power"
+    CALCULATOR_MODE = "calculator"
+    FILE_MODE = "file_viewer"
+    SSH_MODE = "ssh_shortcuts"
 
-    MENU_ITEMS = ("System info", "Network", "Reboot", "Shutdown")
+    MENU_ITEMS = (
+        "System info",
+        "Network",
+        "Reboot",
+        "Shutdown",
+        "Calculator",
+        "File Viewer",
+        "SSH Shortcuts",
+    )
 
     def __init__(
         self,
         system_service: SystemInfoService,
         network_service: NetworkInfoService,
+        calculator: Optional[Calculator] = None,
+        file_page: Optional[FileViewerPage] = None,
+        ssh_page: Optional[SSHShortcutsPage] = None,
     ) -> None:
         self.system_service = system_service
         self.network_service = network_service
@@ -39,6 +79,24 @@ class ToolsPage(BasePage):
         self.power_message = ""
         self._confirmation_action: Optional[str] = None
         self._pending_power_action: Optional[str] = None
+        self.calculator = calculator or Calculator()
+        self.file_page = file_page or FileViewerPage(
+            FileViewerService(FILE_VIEWER_ROOTS, FILE_VIEWER_MAX_BYTES)
+        )
+        self.ssh_page = ssh_page or SSHShortcutsPage(
+            SSHShortcutStore(SSH_SHORTCUTS_FILE, SSH_SHORTCUT_LIMIT),
+            SSHShortcutService(
+                timeout=SSH_COMMAND_TIMEOUT,
+                max_output_chars=SSH_MAX_OUTPUT_CHARS,
+            ),
+        )
+        self.calculator_buffer = ""
+        self.calculator_expression = ""
+        self.calculator_result = ""
+        self.calculator_error = ""
+        self.calculator_history: List[str] = []
+        self.list_offset = 0
+        self._row_count = 5
 
     def open_menu(self, reset_selection: bool = True) -> None:
         self.mode = self.MENU_MODE
@@ -50,6 +108,7 @@ class ToolsPage(BasePage):
         self._pending_power_action = None
         if reset_selection:
             self.selected_index = 0
+            self.list_offset = 0
 
     def move_up(self) -> bool:
         if self.mode != self.MENU_MODE:
@@ -72,7 +131,7 @@ class ToolsPage(BasePage):
         if self.mode != self.MENU_MODE:
             return "unchanged"
 
-        action = ("system", "network", "reboot", "shutdown")[
+        action = ("system", "network", "reboot", "shutdown", "calculator", "file", "ssh")[
             self.selected_index
         ]
         if action == "system":
@@ -80,6 +139,21 @@ class ToolsPage(BasePage):
             return "changed"
         if action == "network":
             self.show_network_info()
+            return "changed"
+        if action == "calculator":
+            self.mode = self.CALCULATOR_MODE
+            self.calculator_buffer = ""
+            self.calculator_expression = ""
+            self.calculator_result = ""
+            self.calculator_error = ""
+            return "changed"
+        if action == "file":
+            self.file_page.open()
+            self.mode = self.FILE_MODE
+            return "changed"
+        if action == "ssh":
+            self.ssh_page.open()
+            self.mode = self.SSH_MODE
             return "changed"
         self.show_power_confirmation(action)
         return "changed"
@@ -143,6 +217,24 @@ class ToolsPage(BasePage):
         self._pending_power_action = None
         return True
 
+    @property
+    def handles_events(self) -> bool:
+        return self.mode in (self.CALCULATOR_MODE, self.FILE_MODE, self.SSH_MODE)
+
+    def handle_event(self, event: InputEvent) -> str:
+        if self.mode == self.CALCULATOR_MODE:
+            return self._handle_calculator_event(event)
+        if self.mode == self.FILE_MODE:
+            action = self.file_page.handle_event(event)
+        elif self.mode == self.SSH_MODE:
+            action = self.ssh_page.handle_event(event)
+        else:
+            return "unhandled"
+        if action == "back":
+            self.mode = self.MENU_MODE
+            return "changed"
+        return action
+
     def render(self, display) -> bool:
         if self.mode == self.SYSTEM_MODE:
             return display.render_page(
@@ -166,12 +258,71 @@ class ToolsPage(BasePage):
             return display.render_page(
                 "SYSTEM", [self.power_message], "b: back"
             )
+        if self.mode == self.CALCULATOR_MODE:
+            lines = []
+            if self.calculator_expression:
+                lines.extend((self.calculator_expression, "= " + self.calculator_result))
+            if self.calculator_error:
+                lines.append(self.calculator_error)
+            lines.extend(display.wrap_text("> " + self.calculator_buffer + "_")[-2:])
+            return display.render_page("CALCULATOR", lines[-display.body_line_count:], "Enter:solve Esc:back")
+        if self.mode == self.FILE_MODE:
+            return self.file_page.render(display)
+        if self.mode == self.SSH_MODE:
+            return self.ssh_page.render(display)
 
+        self._row_count = getattr(display, "body_line_count", 5)
+        self._keep_selection_visible()
+        end = min(self.list_offset + self._row_count, len(self.MENU_ITEMS))
         lines = []
-        for index, label in enumerate(self.MENU_ITEMS):
+        for index in range(self.list_offset, end):
+            label = self.MENU_ITEMS[index]
             prefix = "> " if index == self.selected_index else "  "
             lines.append(prefix + label)
-        return display.render_page("TOOLS", lines, "w/s  Enter  b")
+        return display.render_page("TOOLS", lines, "{0}/{1} Enter b".format(self.selected_index + 1, len(self.MENU_ITEMS)))
+
+    def _handle_calculator_event(self, event: InputEvent) -> str:
+        if event.kind == EVENT_EOF:
+            return "quit"
+        if event.kind == EVENT_ESCAPE:
+            self.mode = self.MENU_MODE
+            return "changed"
+        if event.kind == EVENT_BACKSPACE:
+            self.calculator_buffer = self.calculator_buffer[:-1]
+            return "changed"
+        if event.kind == EVENT_TAB:
+            self.calculator_buffer += " "
+            return "changed"
+        if event.kind in (EVENT_CHARACTER, EVENT_TEXT) and event.character is not None:
+            value = event.character
+            if event.kind == EVENT_TEXT:
+                self.calculator_buffer = value
+            elif value in "0123456789.+-*/%^() ":
+                self.calculator_buffer += value
+            else:
+                self.calculator_error = "Invalid character"
+            return "changed"
+        if event.kind != EVENT_ENTER:
+            return "unchanged"
+        expression = self.calculator_buffer.strip()
+        try:
+            value = self.calculator.calculate(expression)
+            self.calculator_expression = expression
+            self.calculator_result = self.calculator.format_result(value)
+            self.calculator_history.insert(0, expression)
+            self.calculator_history = self.calculator_history[:10]
+            self.calculator_error = ""
+            self.calculator_buffer = ""
+        except CalculatorError as exc:
+            self.calculator_error = str(exc)
+        return "changed"
+
+    def _keep_selection_visible(self) -> None:
+        if self.selected_index < self.list_offset:
+            self.list_offset = self.selected_index
+        elif self.selected_index >= self.list_offset + self._row_count:
+            self.list_offset = self.selected_index - self._row_count + 1
+        self.list_offset = min(self.list_offset, max(0, len(self.MENU_ITEMS) - self._row_count))
 
     def _system_lines(self) -> List[str]:
         info = self.system_info

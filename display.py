@@ -10,6 +10,7 @@ from config import (
     DISPLAY_HEIGHT,
     DISPLAY_MODEL,
     DISPLAY_WIDTH,
+    PARTIAL_REFRESH_LIMIT,
     WAVESHARE_LIB_PATH,
 )
 
@@ -31,7 +32,7 @@ class EpaperDisplay:
         self.height = DISPLAY_HEIGHT
         self.last_frame: Optional[bytes] = None
         self.partial_refresh_count = 0
-        self.partial_refresh_limit = 10
+        self.partial_refresh_limit = PARTIAL_REFRESH_LIMIT
         self.partial_ready = False
         self._force_next_full_refresh = False
         self.body_line_count = 5
@@ -158,9 +159,15 @@ class EpaperDisplay:
             draw = ImageDraw.Draw(image)
             draw.text((5, 3), "CYBERDECK", font=self._title_font, fill=0)
 
+            visible_count = self.body_line_count
+            offset = min(
+                max(0, selected_index - visible_count + 1),
+                max(0, len(items) - visible_count),
+            )
             y = 22
             preview_lines = ["CYBERDECK", ""]
-            for index, (label, _page_key) in enumerate(items):
+            for index in range(offset, min(offset + visible_count, len(items))):
+                label, _page_key = items[index]
                 prefix = "> " if index == selected_index else "  "
                 line = prefix + label
                 draw.text((5, y), line, font=self._font, fill=0)

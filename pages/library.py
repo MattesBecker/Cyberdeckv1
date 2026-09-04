@@ -2,9 +2,11 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from library import (
     ITEM_TYPE_BACK,
+    ITEM_TYPE_BOOKMARKS,
     ITEM_TYPE_DIRECTORY,
     ITEM_TYPE_DOCUMENT,
     ITEM_TYPE_SEARCH,
+    ITEM_TYPE_HISTORY,
     LibraryDocument,
     LibraryItem,
     LibraryProvider,
@@ -12,6 +14,7 @@ from library import (
     LibraryProviderRegistry,
     SearchResult,
 )
+from wiki_store import WikiBookmarksStore, WikiHistoryStore, WikiStoreError
 from input_common import (
     EVENT_BACKSPACE,
     EVENT_CHARACTER,
@@ -47,8 +50,15 @@ class LibraryPage(BasePage):
     MESSAGE_MODE = "message"
     SEARCH_MODE = "search"
     RESULTS_MODE = "results"
+    COLLECTION_MODE = "collection"
+    HISTORY_CONFIRM_MODE = "history_confirm"
 
-    def __init__(self, providers: LibraryProviderRegistry) -> None:
+    def __init__(
+        self,
+        providers: LibraryProviderRegistry,
+        bookmarks: Optional[WikiBookmarksStore] = None,
+        history: Optional[WikiHistoryStore] = None,
+    ) -> None:
         self.providers = providers
         self.mode = self.MAIN_MODE
         self.active_provider: Optional[LibraryProvider] = None
@@ -69,6 +79,12 @@ class LibraryPage(BasePage):
         self._message_text = ""
         self._message_return_mode = self.MAIN_MODE
         self._document_return_mode = self.BROWSE_MODE
+        self.bookmarks = bookmarks
+        self.history = history
+        self.collection_kind = ""
+        self.collection_title = ""
+        self.collection_results: List[SearchResult] = []
+        self.status_message = ""
 
     def open_library(self) -> None:
         """Open the provider menu without touching provider storage."""
@@ -87,6 +103,9 @@ class LibraryPage(BasePage):
         self._wrapped_text = None
         self._browse_history = []
         self._message_text = ""
+        self.collection_kind = ""
+        self.collection_results = []
+        self.status_message = ""
 
     def open_provider(self, provider_key: str) -> bool:
         """Open one provider root, reporting invalid providers on the page."""
@@ -125,6 +144,7 @@ class LibraryPage(BasePage):
                 self.MAIN_MODE,
                 self.BROWSE_MODE,
                 self.RESULTS_MODE,
+                self.COLLECTION_MODE,
             )
             or item_count <= 1
         ):
@@ -145,6 +165,7 @@ class LibraryPage(BasePage):
                 self.MAIN_MODE,
                 self.BROWSE_MODE,
                 self.RESULTS_MODE,
+                self.COLLECTION_MODE,
             )
             or item_count <= 1
         ):
@@ -157,6 +178,8 @@ class LibraryPage(BasePage):
             return self._select_main_item()
         if self.mode == self.RESULTS_MODE:
             return self._open_selected_result()
+        if self.mode == self.COLLECTION_MODE:
+            return self._open_selected_collection_item()
         if self.mode != self.BROWSE_MODE or not self.items:
             return "unchanged"
 
@@ -208,6 +231,14 @@ class LibraryPage(BasePage):
             self.mode = self.SEARCH_MODE
             return "changed"
 
+        if item.item_type == ITEM_TYPE_BOOKMARKS:
+            self._open_collection("bookmarks")
+            return "changed"
+
+        if item.item_type == ITEM_TYPE_HISTORY:
+            self._open_collection("history")
+            return "changed"
+
         if item.item_type == ITEM_TYPE_BACK:
             self.back()
             return "changed"
@@ -229,6 +260,7 @@ class LibraryPage(BasePage):
         self._document_return_mode = self.BROWSE_MODE
         self.page_index = 0
         self._wrapped_text = None
+        self._record_history(self.current_document)
         return "opened"
 
     def back(self) -> bool:
@@ -237,11 +269,22 @@ class LibraryPage(BasePage):
             self.current_document = None
             self.page_index = 0
             self._wrapped_text = None
+            self.status_message = ""
             return True
         if self.mode == self.RESULTS_MODE:
             self.mode = self.SEARCH_MODE
             self.selected_index = 0
             self.list_offset = 0
+            return True
+        if self.mode == self.COLLECTION_MODE:
+            self.mode = self.BROWSE_MODE
+            self.collection_results = []
+            self.status_message = ""
+            self.selected_index = 0
+            self.list_offset = 0
+            return True
+        if self.mode == self.HISTORY_CONFIRM_MODE:
+            self.mode = self.COLLECTION_MODE
             return True
         if self.mode == self.SEARCH_MODE:
             self.mode = self.BROWSE_MODE
@@ -277,6 +320,10 @@ class LibraryPage(BasePage):
             return self._render_search(display)
         if self.mode == self.RESULTS_MODE:
             return self._render_results(display)
+        if self.mode == self.COLLECTION_MODE:
+            return self._render_collection(display)
+        if self.mode == self.HISTORY_CONFIRM_MODE:
+            return display.render_page("HISTORY", ["Clear all history?", "y / n"], "Esc: cancel")
         if self.mode == self.BROWSE_MODE:
             return self._render_items(display)
         return self._render_main(display)
@@ -285,6 +332,20 @@ class LibraryPage(BasePage):
         """Handle navigation and CardKB/CLI search text uniformly."""
         if self.mode == self.SEARCH_MODE:
             return self._handle_search_event(event)
+        if self.mode == self.HISTORY_CONFIRM_MODE:
+            return self._handle_history_confirmation(event)
+        if (
+            self.mode == self.DOCUMENT_MODE
+            and event.kind in (EVENT_CHARACTER, EVENT_TEXT)
+            and (event.character or "").lower() == "m"
+        ):
+            return self._toggle_current_bookmark()
+        if (
+            self.mode == self.COLLECTION_MODE
+            and event.kind in (EVENT_CHARACTER, EVENT_TEXT)
+            and (event.character or "").lower() == "d"
+        ):
+            return self._delete_collection_item()
 
         command = command_for_event(event)
         if command == "quit":
@@ -374,7 +435,10 @@ class LibraryPage(BasePage):
         self.page_index = min(self.page_index, page_count - 1)
         start = self.page_index * self._row_count
         end = start + self._row_count
-        footer = "{0}/{1}  w/s  b".format(self.page_index + 1, page_count)
+        marker = "  m:mark" if document.provider == "wikipedia" else ""
+        footer = self.status_message or "{0}/{1}  w/s  b{2}".format(
+            self.page_index + 1, page_count, marker
+        )
         return display.render_page(
             document.title, self._wrapped_text[start:end], footer
         )
@@ -465,6 +529,7 @@ class LibraryPage(BasePage):
         self._document_return_mode = self.RESULTS_MODE
         self.page_index = 0
         self._wrapped_text = None
+        self._record_history(document)
         return "opened"
 
     def _select_main_item(self) -> str:
@@ -472,18 +537,11 @@ class LibraryPage(BasePage):
         if self.selected_index < len(providers):
             self.open_provider(providers[self.selected_index].key)
             return "changed"
-        if self.selected_index == len(providers):
-            self._show_message(
-                "SEARCH",
-                "Search is not available in this version.",
-                self.MAIN_MODE,
-            )
-            return "changed"
         return "back"
 
     def _main_labels(self) -> List[str]:
         labels = [provider.title for provider in self.providers.list_providers()]
-        labels.extend(("Search", "Back"))
+        labels.append("Back")
         return labels
 
     def _selectable_count(self) -> int:
@@ -493,6 +551,8 @@ class LibraryPage(BasePage):
             return len(self.items)
         if self.mode == self.RESULTS_MODE:
             return len(self.search_results)
+        if self.mode == self.COLLECTION_MODE:
+            return len(self.collection_results)
         return 0
 
     def _keep_selection_visible(self, item_count: int) -> None:
@@ -511,3 +571,130 @@ class LibraryPage(BasePage):
     def _page_count(self) -> int:
         line_count = len(self._wrapped_text or [""])
         return max(1, (line_count + self._row_count - 1) // self._row_count)
+
+    def _open_collection(self, kind: str) -> None:
+        results: List[SearchResult] = []
+        if kind == "bookmarks" and self.bookmarks is not None:
+            results = [
+                SearchResult(item.provider, item.article_id, item.title, "")
+                for item in self.bookmarks.list()
+            ]
+            title = "BOOKMARKS"
+        elif kind == "history" and self.history is not None:
+            results = [
+                SearchResult(item.provider, item.article_id, item.title, "")
+                for item in self.history.list()
+            ]
+            results.append(SearchResult("", "__clear__", "Clear history", ""))
+            title = "HISTORY"
+        else:
+            title = "BOOKMARKS" if kind == "bookmarks" else "HISTORY"
+        results.append(SearchResult("", "__back__", "Back", ""))
+        self.collection_kind = kind
+        self.collection_title = title
+        self.collection_results = results
+        self.mode = self.COLLECTION_MODE
+        self.selected_index = 0
+        self.list_offset = 0
+        self.status_message = ""
+
+    def _render_collection(self, display: "EpaperDisplay") -> bool:
+        self._row_count = display.body_line_count
+        self._keep_selection_visible(len(self.collection_results))
+        end = min(self.list_offset + self._row_count, len(self.collection_results))
+        lines = []
+        for index in range(self.list_offset, end):
+            prefix = "> " if index == self.selected_index else "  "
+            lines.append(prefix + self.collection_results[index].title)
+        footer = self.status_message or "{0}/{1} Enter d b".format(
+            self.selected_index + 1, len(self.collection_results)
+        )
+        return display.render_page(self.collection_title, lines, footer)
+
+    def _open_selected_collection_item(self) -> str:
+        if not self.collection_results:
+            return "unchanged"
+        result = self.collection_results[self.selected_index]
+        if result.id == "__back__":
+            self.back()
+            return "changed"
+        if result.id == "__clear__":
+            self.mode = self.HISTORY_CONFIRM_MODE
+            return "changed"
+        return self._open_result(result, self.COLLECTION_MODE)
+
+    def _open_result(self, result: SearchResult, return_mode: str) -> str:
+        try:
+            provider = self.providers.get(result.provider)
+            document = provider.open_item(result.id)
+        except LibraryProviderError as exc:
+            self._show_message(result.title, str(exc), return_mode)
+            return "changed"
+        self.active_provider = provider
+        self.current_document = document
+        self.mode = self.DOCUMENT_MODE
+        self._document_return_mode = return_mode
+        self.page_index = 0
+        self._wrapped_text = None
+        self.status_message = ""
+        self._record_history(document)
+        return "opened"
+
+    def _record_history(self, document: Optional[LibraryDocument]) -> None:
+        if document is None or document.provider != "wikipedia" or self.history is None:
+            return
+        try:
+            self.history.record(document.provider, document.id, document.title)
+        except WikiStoreError:
+            self.status_message = "History save failed"
+
+    def _toggle_current_bookmark(self) -> str:
+        document = self.current_document
+        if document is None or document.provider != "wikipedia" or self.bookmarks is None:
+            return "unchanged"
+        try:
+            added = self.bookmarks.toggle(document.provider, document.id, document.title)
+            self.status_message = "Bookmarked" if added else "Bookmark removed"
+        except WikiStoreError:
+            self.status_message = "Bookmark save failed"
+        return "changed"
+
+    def _delete_collection_item(self) -> str:
+        if not self.collection_results:
+            return "unchanged"
+        result = self.collection_results[self.selected_index]
+        if result.id.startswith("__"):
+            return "unchanged"
+        try:
+            if self.collection_kind == "bookmarks" and self.bookmarks is not None:
+                changed = self.bookmarks.remove(result.provider, result.id)
+            elif self.collection_kind == "history" and self.history is not None:
+                changed = self.history.remove(result.provider, result.id)
+            else:
+                changed = False
+        except WikiStoreError:
+            self.status_message = "Delete failed"
+            return "changed"
+        if changed:
+            self._open_collection(self.collection_kind)
+            self.status_message = "Removed"
+        return "changed" if changed else "unchanged"
+
+    def _handle_history_confirmation(self, event: InputEvent) -> str:
+        if event.kind == EVENT_EOF:
+            return "quit"
+        value = (event.character or "").lower()
+        if event.kind in (EVENT_ESCAPE, EVENT_LEFT) or value == "n":
+            self.mode = self.COLLECTION_MODE
+            return "changed"
+        if value == "y":
+            try:
+                if self.history is not None:
+                    self.history.clear()
+                self._open_collection("history")
+                self.status_message = "History cleared"
+            except WikiStoreError:
+                self.mode = self.COLLECTION_MODE
+                self.status_message = "Clear failed"
+            return "changed"
+        return "unchanged"

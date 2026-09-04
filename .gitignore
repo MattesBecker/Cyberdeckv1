@@ -15,3 +15,9 @@ data/tasks.json*
 data/.tasks.*.tmp
 data/terminal_history.txt
 data/.terminal_history.*.tmp
+data/wiki_bookmarks.json
+data/wiki_history.json
+data/settings.json
+data/ssh_shortcuts.json
+data/game_stats.json
+data/.*.tmp

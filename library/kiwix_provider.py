@@ -28,6 +28,8 @@ from config import (
 
 from .base import (
     ITEM_TYPE_BACK,
+    ITEM_TYPE_BOOKMARKS,
+    ITEM_TYPE_HISTORY,
     ITEM_TYPE_SEARCH,
     LibraryDocument,
     LibraryItem,
@@ -371,12 +373,23 @@ class KiwixProvider(LibraryProvider):
         except LibraryProviderError:
             return False
 
+    def is_configured(self) -> bool:
+        """Check local prerequisites without starting kiwix-serve."""
+        return (
+            self.enabled
+            and self.zim_path.is_file()
+            and self.server_path.is_file()
+            and os.access(self.server_path, os.X_OK)
+        )
+
     def list_items(self, container_id: str = "") -> List[LibraryItem]:
         if container_id:
             raise KiwixProviderError("Wikipedia unavailable")
         self._ensure_server()
         return [
             LibraryItem(self.key, "search", "Search", ITEM_TYPE_SEARCH),
+            LibraryItem(self.key, "bookmarks", "Bookmarks", ITEM_TYPE_BOOKMARKS),
+            LibraryItem(self.key, "history", "History", ITEM_TYPE_HISTORY),
             LibraryItem(self.key, "back", "Back", ITEM_TYPE_BACK),
         ]
 

@@ -15,6 +15,8 @@ from input_cli import CLIInputSource
 from input_common import EVENT_FULL_REFRESH, InputEvent, command_for_event
 from menu import MenuController
 from pages.games import GamesPage
+from pages.dashboard import DashboardPage
+from settings_store import RuntimeSettings
 
 
 class StartupDisplay:
@@ -31,6 +33,10 @@ class StartupDisplay:
 
     def render_menu(self, items, selected_index):
         self.events.append(("menu", selected_index))
+        return True
+
+    def render_page(self, title, lines, footer):
+        self.events.append(("page", title))
         return True
 
 
@@ -74,6 +80,33 @@ class StartupSequenceTest(unittest.TestCase):
 
         self.assertEqual(display.events, [("menu", 0)])
         sleeper.assert_not_called()
+
+    def test_default_start_screen_is_dashboard_after_forced_full_refresh(self):
+        display = StartupDisplay(enabled=True)
+        menu = MenuController(MENU_ITEMS)
+        settings = RuntimeSettings(
+            dashboard_wifi=False,
+            dashboard_tasks=False,
+            dashboard_storage=False,
+        )
+        dashboard = DashboardPage(
+            Mock(), Mock(), Mock(), settings, wiki_ready=lambda: False
+        )
+
+        app.show_startup(
+            display,
+            menu,
+            {DashboardPage.key: dashboard},
+            sleeper=lambda seconds: display.events.append(("sleep", seconds)),
+            settings=settings,
+        )
+
+        self.assertEqual(menu.current_view, DashboardPage.key)
+        self.assertEqual(
+            display.events[:3],
+            [("boot", BOOT_LOGO_PATH), ("sleep", 0.5), ("full", None)],
+        )
+        self.assertEqual(display.events[3], ("page", "CYBERDECK"))
 
     def test_global_full_refresh_event_rerenders_current_view(self):
         display = StartupDisplay(enabled=False)
@@ -138,6 +171,15 @@ class BootScreenDisplayTest(unittest.TestCase):
         self.assertEqual(display.partial_refresh_count, 0)
         self.assertTrue(display.partial_ready)
 
+    def test_long_main_menu_keeps_selected_item_visible(self):
+        display = EpaperDisplay(enabled=False)
+        display.initialize()
+        with patch.object(display, "refresh", return_value=True) as refresh:
+            display.render_menu(MENU_ITEMS, len(MENU_ITEMS) - 1)
+        preview = refresh.call_args.kwargs["preview_lines"]
+        self.assertIn("> Settings", preview)
+        self.assertNotIn("> Notes", preview)
+
 
 class GamesPageTest(unittest.TestCase):
     def setUp(self):
@@ -148,10 +190,12 @@ class GamesPageTest(unittest.TestCase):
         self.page.render(self.display)
         self.assertEqual(self.display.last[0], "GAMES")
         self.assertEqual(
-            self.display.last[1], ["> Tic-Tac-Toe", "  Minesweeper", "  Back"]
+            self.display.last[1],
+            ["> 2048", "  Tic-Tac-Toe", "  Sudoku", "  Minesweeper", "  Back"],
         )
 
     def test_tic_tac_toe_starts_and_accepts_move(self):
+        self.page.move_down()
         self.assertEqual(self.page.select(), "changed")
         self.page.render(self.display)
         self.assertEqual(self.display.last[0], "TIC-TAC-TOE")
@@ -162,11 +206,12 @@ class GamesPageTest(unittest.TestCase):
         self.assertTrue(self.page.back_to_menu())
 
     def test_minesweeper_starts(self):
-        self.page.move_down()
+        for _ in range(3):
+            self.page.move_down()
         self.assertEqual(self.page.select(), "changed")
         self.assertEqual(self.page.mode, self.page.MINES_MODE)
         self.page.render(self.display)
-        self.assertEqual(self.display.last[0], "MINESWEEPER")
+        self.assertEqual(self.display.last[0], "MINES 8x5")
         self.page.select()
         self.assertIn(0, self.page.revealed)
 

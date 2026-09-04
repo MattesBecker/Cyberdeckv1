@@ -6,6 +6,8 @@ ITEM_TYPE_DIRECTORY = "directory"
 ITEM_TYPE_DOCUMENT = "document"
 ITEM_TYPE_SEARCH = "search"
 ITEM_TYPE_BACK = "back"
+ITEM_TYPE_BOOKMARKS = "bookmarks"
+ITEM_TYPE_HISTORY = "history"
 
 
 class LibraryProviderError(RuntimeError):

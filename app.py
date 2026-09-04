@@ -8,16 +8,20 @@ from typing import Callable, Dict, Optional, Sequence
 
 from config import (
     BOOT_LOGO_PATH,
-    BOOT_SCREEN_SECONDS,
+    GAME_STATS_FILE,
     INPUT_MODE,
-    KIWIX_ENABLED,
     LIBRARY_DIR,
     MENU_ITEMS,
     NOTES_DIR,
+    SETTINGS_FILE,
     TASKS_FILE,
     TERMINAL_COMMAND_TIMEOUT,
     TERMINAL_HISTORY_FILE,
     TERMINAL_HISTORY_LIMIT,
+    WIKI_BOOKMARKS_FILE,
+    WIKI_BOOKMARKS_LIMIT,
+    WIKI_HISTORY_FILE,
+    WIKI_HISTORY_LIMIT,
 )
 from display import DisplayError, EpaperDisplay
 from input_common import (
@@ -32,9 +36,11 @@ from library import KiwixProvider, LibraryProviderRegistry, LocalLibraryProvider
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
+from pages.dashboard import DashboardPage
 from pages.games import GamesPage
 from pages.library import LibraryPage
 from pages.notes import NotesPage
+from pages.settings import SettingsPage
 from pages.tasks import TasksPage
 from pages.terminal import TerminalPage
 from pages.tools import ToolsPage
@@ -45,6 +51,9 @@ from services import (
 )
 from tasks_store import TasksStore, TasksStoreError
 from terminal_history import TerminalHistoryStore
+from settings_store import RuntimeSettings, SettingsStore
+from wiki_store import WikiBookmarksStore, WikiHistoryStore
+from game_logic import GameStatsStore
 
 
 class TerminationRequested(BaseException):
@@ -97,12 +106,21 @@ def show_startup(
     menu: MenuController,
     pages: Dict[str, BasePage],
     sleeper: Callable[[float], None] = time.sleep,
+    settings: Optional[RuntimeSettings] = None,
 ) -> bool:
-    """Show the hardware boot frame, then force a clean main-menu frame."""
-    if display.enabled:
+    """Show an optional boot frame, then force the configured start screen."""
+    active_settings = settings or RuntimeSettings()
+    if display.enabled and active_settings.boot_enabled:
         display.show_boot_screen(BOOT_LOGO_PATH)
-        sleeper(BOOT_SCREEN_SECONDS)
+        sleeper(active_settings.boot_duration)
         display.request_full_refresh()
+    if active_settings.start_screen == "dashboard":
+        menu.current_view = DashboardPage.key
+        dashboard = pages.get(DashboardPage.key)
+        if isinstance(dashboard, DashboardPage):
+            dashboard.open(active_settings)
+        else:
+            menu.current_view = menu.MAIN_MENU
     return render_current_view(display, menu, pages)
 
 
@@ -307,6 +325,8 @@ def handle_command(
             return handle_library_command(command, page, menu)
         if isinstance(page, GamesPage):
             return handle_games_command(command, page, menu)
+        if isinstance(page, DashboardPage):
+            return menu.back() if command == "select" else False
         if command == "back":
             return menu.back()
         return False
@@ -346,6 +366,10 @@ def handle_command(
             games_page = pages[GamesPage.key]
             if isinstance(games_page, GamesPage):
                 games_page.open_menu()
+        elif changed and menu.current_view == SettingsPage.key:
+            settings_page = pages[SettingsPage.key]
+            if isinstance(settings_page, SettingsPage):
+                settings_page.open()
         return changed
     if command == "back":
         return menu.back()
@@ -361,6 +385,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     requested_power_action: Optional[str] = None
     power_controller = PowerController()
     exit_code = 0
+    settings_store = SettingsStore(SETTINGS_FILE)
+    runtime_settings = settings_store.load()
 
     try:
         signal.signal(signal.SIGTERM, handle_sigterm)
@@ -369,13 +395,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("Input source: {0}".format(input_source.name))
         display = EpaperDisplay(enabled=not args.no_display)
         display.initialize()
+        display.partial_refresh_limit = runtime_settings.partial_refresh_max
 
         menu = MenuController(MENU_ITEMS)
         tasks_store = TasksStore(TASKS_FILE)
         tasks_store.ensure_file()
         configured_providers = [LocalLibraryProvider(LIBRARY_DIR)]
-        if KIWIX_ENABLED:
-            configured_providers.append(KiwixProvider())
+        kiwix_provider = None
+        if runtime_settings.kiwix_enabled:
+            kiwix_provider = KiwixProvider(enabled=runtime_settings.kiwix_enabled)
+            configured_providers.append(kiwix_provider)
         library_providers = LibraryProviderRegistry(configured_providers)
         pages = create_pages(
             NotesStore(NOTES_DIR),
@@ -385,8 +414,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             TerminalHistoryStore(
                 TERMINAL_HISTORY_FILE, TERMINAL_HISTORY_LIMIT
             ),
+            settings_store=settings_store,
+            runtime_settings=runtime_settings,
+            wiki_ready=(kiwix_provider.is_configured if kiwix_provider is not None else lambda: False),
+            bookmarks_store=WikiBookmarksStore(WIKI_BOOKMARKS_FILE, WIKI_BOOKMARKS_LIMIT),
+            history_store=WikiHistoryStore(WIKI_HISTORY_FILE, WIKI_HISTORY_LIMIT),
+            game_stats_store=GameStatsStore(GAME_STATS_FILE),
         )
-        show_startup(display, menu, pages)
+        show_startup(display, menu, pages, settings=runtime_settings)
 
         while True:
             event = input_source.read_event()
@@ -420,6 +455,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     changed = menu.back()
                 else:
                     changed = terminal_action == "changed"
+            elif not menu.is_main_menu() and menu.current_view == GamesPage.key:
+                games_page = pages[GamesPage.key]
+                if not isinstance(games_page, GamesPage):
+                    raise RuntimeError("Games page is not configured.")
+                game_action = games_page.handle_event(event)
+                if game_action == "quit":
+                    break
+                if game_action == "back":
+                    changed = menu.back()
+                else:
+                    changed = game_action == "changed"
+            elif not menu.is_main_menu() and menu.current_view == SettingsPage.key:
+                settings_page = pages[SettingsPage.key]
+                if not isinstance(settings_page, SettingsPage):
+                    raise RuntimeError("Settings page is not configured.")
+                settings_action = settings_page.handle_event(event)
+                if settings_action == "quit":
+                    break
+                if settings_action == "back":
+                    changed = menu.back()
+                else:
+                    changed = settings_action == "changed"
+                display.partial_refresh_limit = settings_page.settings.partial_refresh_max
+            elif (
+                not menu.is_main_menu()
+                and menu.current_view == ToolsPage.key
+                and isinstance(pages[ToolsPage.key], ToolsPage)
+                and pages[ToolsPage.key].handles_events
+            ):
+                tools_action = pages[ToolsPage.key].handle_event(event)
+                if tools_action == "quit":
+                    break
+                changed = tools_action == "changed"
             else:
                 command = command_for_event(event)
                 if command == "quit":

@@ -227,14 +227,14 @@ class LibraryPageTest(unittest.TestCase):
         self.page.open_library()
         self.assertEqual(self.page.select(), "changed")
 
-    def test_provider_menu_renders_local_search_and_back(self):
+    def test_provider_menu_renders_local_and_back(self):
         self.page.open_library()
         self.page.render(self.display)
 
         self.assertEqual(self.display.last[0], "LIBRARY")
         self.assertEqual(
             self.display.last[1],
-            ["> Local files", "  Search", "  Back"],
+            ["> Local files", "  Back"],
         )
 
     def test_empty_local_provider_renders_without_navigation_changes(self):
@@ -299,21 +299,8 @@ class LibraryPageTest(unittest.TestCase):
         self.assertTrue(self.page.back())
         self.assertEqual(self.page.mode, self.page.BROWSE_MODE)
 
-    def test_search_is_an_explicit_nonfunctional_placeholder(self):
-        self.page.open_library()
-        self.assertTrue(self.page.move_down())
-
-        self.assertEqual(self.page.select(), "changed")
-        self.assertEqual(self.page.mode, self.page.MESSAGE_MODE)
-        self.page.render(self.display)
-        self.assertEqual(self.display.last[0], "SEARCH")
-        self.assertIn("not available", " ".join(self.display.last[1]))
-        self.assertTrue(self.page.back())
-        self.assertEqual(self.page.mode, self.page.MAIN_MODE)
-
     def test_back_menu_item_returns_back_action(self):
         self.page.open_library()
-        self.page.move_down()
         self.page.move_down()
 
         self.assertEqual(self.page.select(), "back")
