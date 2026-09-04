@@ -44,7 +44,7 @@ class FakePageDisplay:
 
 
 class StartupSequenceTest(unittest.TestCase):
-    def test_bootscreen_waits_three_seconds_then_forces_full_main_menu(self):
+    def test_bootscreen_waits_half_second_then_forces_full_main_menu(self):
         display = StartupDisplay(enabled=True)
         menu = MenuController(MENU_ITEMS)
 
@@ -54,7 +54,7 @@ class StartupSequenceTest(unittest.TestCase):
         changed = app.show_startup(display, menu, {}, sleeper=sleeper)
 
         self.assertTrue(changed)
-        self.assertEqual(BOOT_SCREEN_SECONDS, 3.0)
+        self.assertEqual(BOOT_SCREEN_SECONDS, 0.5)
         self.assertEqual(
             display.events,
             [

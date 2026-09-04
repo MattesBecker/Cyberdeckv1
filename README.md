@@ -29,7 +29,7 @@ python3 app.py --input=auto
 
 `--input=auto` verwendet die CardKB, wenn sie erreichbar ist, und fällt sonst auf CLI/SSH zurück.
 
-Beim Hardware-Start wird zuerst `assets/boot_logo.png` per Full Refresh angezeigt. Der Bootscreen bleibt 3 Sekunden sichtbar. Danach wird das Hauptmenü erneut mit einem Full Refresh aufgebaut. Im `--no-display`-Modus wird der Bootscreen samt Wartezeit übersprungen.
+Beim Hardware-Start wird zuerst `assets/boot_logo.png` per Full Refresh angezeigt. Der Bootscreen bleibt 0,5 Sekunden sichtbar. Danach wird das Hauptmenü erneut mit einem Full Refresh aufgebaut. Im `--no-display`-Modus wird der Bootscreen samt Wartezeit übersprungen.
 
 ## Eingabe
 
