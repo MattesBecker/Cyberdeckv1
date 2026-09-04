@@ -221,6 +221,37 @@ class KiwixProviderTest(unittest.TestCase):
         )
         self.assertTrue(any("pageLength=2" in url for url in requested_urls))
 
+    def test_search_uses_only_links_from_official_results_container(self):
+        search_html = """
+            <div class="header">
+              <a href="/content/wikipedia/Wikipedia">Header link</a>
+            </div>
+            <div class="results">
+              <ul>
+                <li>
+                  <a href="/content/wikipedia/Asien">Asien</a>
+                  <cite>Asien ist der größte Erdteil ...</cite>
+                </li>
+              </ul>
+            </div>
+            <div class="footer">
+              <a href="/content/wikipedia/Not_A_Result">Footer link</a>
+            </div>
+        """
+
+        def urlopen(url, timeout):
+            body = search_html if "/search?" in url else "Kiwix"
+            return FakeResponse(body, url)
+
+        provider = self.make_provider(urlopen)
+
+        results = provider.search("Asien")
+
+        self.assertEqual(
+            [(result.id, result.title) for result in results],
+            [("/content/wikipedia/Asien", "Asien")],
+        )
+
     def test_search_without_results_returns_empty_list(self):
         def urlopen(url, timeout):
             body = (
@@ -271,6 +302,66 @@ class KiwixProviderTest(unittest.TestCase):
         self.assertNotIn("Navigation menu", document.text)
         self.assertNotIn("window.bad", document.text)
         self.assertNotIn("color: red", document.text)
+
+    def test_modern_wikipedia_root_classes_do_not_hide_article(self):
+        article_html = """
+            <html class="client-nojs vector-feature-main-menu-pinned-disabled">
+              <head><title>Asien</title></head>
+              <body class="skin-vector vector-feature-toc-pinned-clientpref-1">
+                <div class="vector-main-menu-landmark">
+                  <p>Navigation menu</p>
+                </div>
+                <main id="content">
+                  <h1>Asien</h1>
+                  <div id="mw-content-text">
+                    <div class="mw-parser-output">
+                      <p>Asien ist der größte Erdteil.</p>
+                    </div>
+                  </div>
+                </main>
+              </body>
+            </html>
+        """
+        requested_urls = []
+
+        def urlopen(url, timeout):
+            requested_urls.append(url)
+            body = article_html if "/content/" in url else "Kiwix"
+            return FakeResponse(body, url)
+
+        provider = self.make_provider(urlopen)
+
+        document = provider.open_item("/content/wikipedia/Asien")
+
+        self.assertEqual(document.title, "Asien")
+        self.assertIn("Asien ist der größte Erdteil.", document.text)
+        self.assertNotIn("Navigation menu", document.text)
+        self.assertFalse(any("/raw/" in url for url in requested_urls))
+
+    def test_empty_content_response_retries_raw_zim_entry(self):
+        requested_urls = []
+
+        def urlopen(url, timeout):
+            requested_urls.append(url)
+            if "/raw/" in url:
+                return FakeResponse(
+                    "<html><head><title>Asien</title></head>"
+                    "<body><p>Lesbarer Rohtext.</p></body></html>",
+                    url,
+                )
+            if "/content/" in url:
+                return FakeResponse("<script>viewer only</script>", url)
+            return FakeResponse("Kiwix", url)
+
+        provider = self.make_provider(urlopen)
+
+        document = provider.open_item("/content/wikipedia/Asien")
+
+        self.assertEqual(document.title, "Asien")
+        self.assertIn("Lesbarer Rohtext.", document.text)
+        self.assertTrue(
+            any("/raw/wikipedia/content/Asien" in url for url in requested_urls)
+        )
 
     def test_heading_and_id_are_used_as_title_fallbacks(self):
         def heading_response(url, timeout):

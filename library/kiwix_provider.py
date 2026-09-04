@@ -91,14 +91,35 @@ _HIDDEN_TAGS = frozenset(
         "template",
     )
 )
-_HIDDEN_ATTRIBUTE_MARKERS = (
-    "menu",
-    "nav",
-    "sidebar",
-    "site-header",
-    "site-footer",
-    "toolbar",
+_HIDDEN_ATTRIBUTE_TOKENS = frozenset(
+    (
+        "catlinks",
+        "menu",
+        "mw-editsection",
+        "mw-navigation",
+        "mw-panel",
+        "navigation",
+        "navbox",
+        "noprint",
+        "printfooter",
+        "sidebar",
+        "site-footer",
+        "site-header",
+        "toc",
+        "toolbar",
+        "vertical-navbox",
+    )
 )
+_HIDDEN_ATTRIBUTE_PREFIXES = (
+    "mw-portlet-",
+    "vector-header-",
+    "vector-main-menu-",
+    "vector-menu-",
+    "vector-page-tools-",
+    "vector-sticky-header-",
+    "vector-toc-",
+)
+_HIDABLE_CONTAINER_TAGS = frozenset(("div", "section", "table", "ul"))
 
 
 class KiwixProviderError(LibraryProviderError):
@@ -120,12 +141,22 @@ class _LocalOnlyRedirectHandler(HTTPRedirectHandler):
 class _SearchHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.links: List[Tuple[str, str]] = []
+        self._result_links: List[Tuple[str, str]] = []
+        self._fallback_links: List[Tuple[str, str]] = []
+        self._results_depth = 0
         self._href: Optional[str] = None
         self._text_parts: List[str] = []
+        self._link_is_result = False
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag.lower() != "a" or self._href is not None:
+        tag = tag.lower()
+        if self._results_depth:
+            if tag not in _VOID_TAGS:
+                self._results_depth += 1
+        elif tag == "div" and "results" in _attribute_tokens(attrs, "class"):
+            self._results_depth = 1
+
+        if tag != "a" or self._href is not None:
             return
         href = dict(attrs).get("href", "")
         try:
@@ -134,25 +165,39 @@ class _SearchHTMLParser(HTMLParser):
             self._href = None
             return
         self._text_parts = []
+        self._link_is_result = self._results_depth > 0
 
     def handle_data(self, data: str) -> None:
         if self._href is not None:
             self._text_parts.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() != "a" or self._href is None:
-            return
-        title = " ".join(" ".join(self._text_parts).split())
-        self.links.append((self._href, title))
-        self._href = None
-        self._text_parts = []
+        tag = tag.lower()
+        if tag == "a" and self._href is not None:
+            self._finish_link()
+        if self._results_depth:
+            self._results_depth -= 1
 
     def close(self) -> None:
         if self._href is not None:
-            title = " ".join(" ".join(self._text_parts).split())
-            self.links.append((self._href, title))
-            self._href = None
+            self._finish_link()
         super().close()
+
+    @property
+    def links(self) -> List[Tuple[str, str]]:
+        # Current kiwix-serve versions wrap actual hits in div.results.  The
+        # fallback keeps parsing compatible with older/minimal result pages.
+        return self._result_links or self._fallback_links
+
+    def _finish_link(self) -> None:
+        if self._href is None:
+            return
+        title = " ".join(" ".join(self._text_parts).split())
+        target = self._result_links if self._link_is_result else self._fallback_links
+        target.append((self._href, title))
+        self._href = None
+        self._text_parts = []
+        self._link_is_result = False
 
 
 class _ArticleHTMLParser(HTMLParser):
@@ -174,7 +219,7 @@ class _ArticleHTMLParser(HTMLParser):
                 self._hidden_depth += 1
             return
         if tag in _HIDDEN_TAGS or (
-            tag not in _VOID_TAGS and _is_hidden_container(attrs)
+            tag not in _VOID_TAGS and _is_hidden_container(tag, attrs)
         ):
             self._flush()
             self._hidden_depth = 1
@@ -388,16 +433,33 @@ class KiwixProvider(LibraryProvider):
         self._ensure_server()
         encoded_path = quote(normalized_id, safe="/%:@-._~!$&'()*+,;=")
         html = self._fetch_text(encoded_path, "Article unavailable")
-        parser = _ArticleHTMLParser()
         try:
-            parser.feed(html)
-            parser.close()
+            parser = _parse_article_html(html)
         except Exception as exc:
             logger.warning("Could not parse Kiwix article HTML: %s", exc)
             raise KiwixProviderError("Article unavailable") from exc
 
         if not parser.text:
-            logger.warning("Kiwix article %s contained no readable text", item_id)
+            logger.info(
+                "Kiwix article %s had no text after viewer processing; "
+                "retrying the raw ZIM entry",
+                item_id,
+            )
+            raw_path = _raw_content_path(normalized_id)
+            encoded_raw_path = quote(raw_path, safe="/%:@-._~!$&'()*+,;=")
+            raw_html = self._fetch_text(encoded_raw_path, "Article unavailable")
+            try:
+                parser = _parse_article_html(raw_html)
+            except Exception as exc:
+                logger.warning("Could not parse raw Kiwix article HTML: %s", exc)
+                raise KiwixProviderError("Article unavailable") from exc
+
+        if not parser.text:
+            logger.warning(
+                "Kiwix article %s contained no readable text in either "
+                "the content or raw response",
+                item_id,
+            )
             raise KiwixProviderError("Article unavailable")
         title = parser.title or parser.first_heading or self.get_title(item_id)
         return LibraryDocument(
@@ -580,9 +642,16 @@ def _normalize_content_id(item_id: str) -> str:
     if parsed.scheme or parsed.netloc or not parsed.path.startswith("/content/"):
         raise ValueError("content ID must be a local /content/ path")
     decoded_parts = unquote(parsed.path).split("/")
-    if ".." in decoded_parts:
+    if ".." in decoded_parts or len(decoded_parts) < 4 or not decoded_parts[2]:
         raise ValueError("content ID contains path traversal")
     return parsed.path
+
+
+def _raw_content_path(content_id: str) -> str:
+    parts = content_id.split("/", 3)
+    if len(parts) != 4 or parts[1] != "content" or not parts[2] or not parts[3]:
+        raise ValueError("invalid content ID")
+    return "/raw/{0}/content/{1}".format(parts[2], parts[3])
 
 
 def _is_expected_local_url(url: str, host: str, port: int) -> bool:
@@ -598,20 +667,41 @@ def _response_url(response, fallback: str) -> str:
     return geturl() if callable(geturl) else fallback
 
 
-def _is_hidden_container(attrs) -> bool:
-    values = []
+def _attribute_tokens(attrs, attribute_name: str) -> set:
+    tokens = set()
+    wanted_name = attribute_name.lower()
+    for name, value in attrs:
+        if value is not None and name.lower() == wanted_name:
+            tokens.update(value.lower().split())
+    return tokens
+
+
+def _is_hidden_container(tag: str, attrs) -> bool:
     role = ""
     for name, value in attrs:
         if value is None:
             continue
         if name.lower() == "role":
-            role = value.lower()
-        if name.lower() in ("class", "id"):
-            values.append(value.lower())
+            role = value.lower().strip()
     if role in ("menu", "menubar", "navigation"):
         return True
-    combined = " ".join(values)
-    return any(marker in combined for marker in _HIDDEN_ATTRIBUTE_MARKERS)
+    if tag not in _HIDABLE_CONTAINER_TAGS:
+        return False
+
+    tokens = _attribute_tokens(attrs, "class") | _attribute_tokens(attrs, "id")
+    for token in tokens:
+        if token in _HIDDEN_ATTRIBUTE_TOKENS:
+            return True
+        if any(token.startswith(prefix) for prefix in _HIDDEN_ATTRIBUTE_PREFIXES):
+            return True
+    return False
+
+
+def _parse_article_html(html: str) -> _ArticleHTMLParser:
+    parser = _ArticleHTMLParser()
+    parser.feed(html)
+    parser.close()
+    return parser
 
 
 def _close_response(response) -> None:
