@@ -2,6 +2,7 @@ import time
 from typing import Callable, Optional
 
 from config import (
+    CARDKB_FULL_REFRESH_CODE,
     CARDKB_I2C_ADDRESS,
     CARDKB_I2C_BUS,
     CARDKB_POLL_INTERVAL,
@@ -12,6 +13,7 @@ from input_common import (
     EVENT_DOWN,
     EVENT_ENTER,
     EVENT_ESCAPE,
+    EVENT_FULL_REFRESH,
     EVENT_LEFT,
     EVENT_RIGHT,
     EVENT_SPECIAL,
@@ -48,6 +50,7 @@ def decode_cardkb_code(code: int) -> Optional[InputEvent]:
         13: EVENT_ENTER,
         27: EVENT_ESCAPE,
         127: EVENT_BACKSPACE,
+        CARDKB_FULL_REFRESH_CODE: EVENT_FULL_REFRESH,
         CARDKB_UP: EVENT_UP,
         CARDKB_DOWN: EVENT_DOWN,
         CARDKB_LEFT: EVENT_LEFT,
