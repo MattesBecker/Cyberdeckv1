@@ -41,8 +41,8 @@ python3 app.py
 Standardmäßig wird `--input=auto` verwendet: Eine erreichbare CardKB wird
 verwendet, andernfalls bleibt die blockierende CLI-/SSH-Eingabe aktiv.
 
-Auf echtem E-Paper zeigt die App zuerst drei Sekunden lang das monochrome
-Boot-Logo aus `assets/boot_logo.png`. Fehlt das Asset oder ist es ungültig,
+Auf echtem E-Paper zeigt die App zuerst kurz das monochrome Boot-Logo aus
+`assets/boot_logo.png`. Fehlt das Asset oder ist es ungültig,
 erscheint stattdessen ein textbasierter Bootscreen. Das anschließende
 Hauptmenü wird immer mit einem Full Refresh aufgebaut. Im `--no-display`-Modus
 wird der Bootscreen samt Wartezeit übersprungen.
