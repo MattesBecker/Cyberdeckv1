@@ -5,6 +5,7 @@ from typing import Dict, Optional, Sequence
 
 from config import (
     INPUT_MODE,
+    KIWIX_ENABLED,
     LIBRARY_DIR,
     MENU_ITEMS,
     NOTES_DIR,
@@ -16,7 +17,7 @@ from config import (
 from display import DisplayError, EpaperDisplay
 from input_common import InputError, InputEvent, InputSource, command_for_event
 from input_factory import INPUT_MODES, create_input_source
-from library import LibraryProviderRegistry, LocalLibraryProvider
+from library import KiwixProvider, LibraryProviderRegistry, LocalLibraryProvider
 from menu import MenuController
 from notes_store import NotesStore, NotesStoreError
 from pages import BasePage, create_pages
@@ -280,6 +281,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     display: Optional[EpaperDisplay] = None
     input_source: Optional[InputSource] = None
+    library_providers: Optional[LibraryProviderRegistry] = None
     requested_power_action: Optional[str] = None
     power_controller = PowerController()
     exit_code = 0
@@ -294,10 +296,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         menu = MenuController(MENU_ITEMS)
         tasks_store = TasksStore(TASKS_FILE)
         tasks_store.ensure_file()
+        configured_providers = [LocalLibraryProvider(LIBRARY_DIR)]
+        if KIWIX_ENABLED:
+            configured_providers.append(KiwixProvider())
+        library_providers = LibraryProviderRegistry(configured_providers)
         pages = create_pages(
             NotesStore(NOTES_DIR),
             tasks_store,
-            LibraryProviderRegistry((LocalLibraryProvider(LIBRARY_DIR),)),
+            library_providers,
             TerminalService(TERMINAL_COMMAND_TIMEOUT),
             TerminalHistoryStore(
                 TERMINAL_HISTORY_FILE, TERMINAL_HISTORY_LIMIT
@@ -307,7 +313,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         while True:
             event = input_source.read_event()
-            if not menu.is_main_menu() and menu.current_view == TerminalPage.key:
+            if not menu.is_main_menu() and menu.current_view == LibraryPage.key:
+                library_page = pages[LibraryPage.key]
+                if not isinstance(library_page, LibraryPage):
+                    raise RuntimeError("Library page is not configured.")
+                library_action = library_page.handle_event(event)
+                if library_action == "quit":
+                    break
+                if library_action == "invalid":
+                    _print_unknown_input(event)
+                    continue
+                if library_action == "back":
+                    changed = menu.back()
+                else:
+                    changed = library_action in ("changed", "opened")
+            elif not menu.is_main_menu() and menu.current_view == TerminalPage.key:
                 terminal_page = pages[TerminalPage.key]
                 if not isinstance(terminal_page, TerminalPage):
                     raise RuntimeError("Terminal page is not configured.")
@@ -361,6 +381,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         traceback.print_exc()
         exit_code = 1
     finally:
+        if library_providers is not None:
+            library_providers.close()
         if input_source is not None:
             input_source.close()
         if display is not None:

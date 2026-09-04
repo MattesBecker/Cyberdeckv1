@@ -18,6 +18,8 @@ Leichtgewichtige Menübasis für ein kleines, offline nutzbares Cyberdeck.
   unter Raspberry Pi OS mit `sudo apt install python3-pil`.
 - Für I2C ist `smbus2` aus `requirements.txt` oder alternativ das Paket
   `python3-smbus` installiert.
+- Für Wikipedia ist `/usr/bin/kiwix-serve` vorhanden und die deutsche ZIM liegt
+  unter `data/zim/wikipedia_de_all_nopic_2026-01.zim`.
 
 ## Waveshare-Pfad
 
@@ -92,6 +94,7 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `terminal_history.py`: lokale History der letzten 20 Befehle
 - `library/base.py`: gemeinsame Provider-, Item-, Dokument- und Suchmodelle
 - `library/local_provider.py`: sicherer Zugriff auf lokale `.txt`/`.md`-Dateien
+- `library/kiwix_provider.py`: Wikipedia-Suche und Artikelleser via lokalem Kiwix
 - `library/registry.py`: registriert und ermittelt Bibliotheksquellen
 - `services/terminal_service.py`: begrenzte Befehlsausführung ohne Shell
 - `services/system_info.py`: `/proc`-Systemwerte und bestätigte Power-Aktionen
@@ -99,6 +102,7 @@ wartet zwischen leeren Reads 30 ms und erzeugt dadurch keine Busy-Wait-Last.
 - `pages/`: kleine, unabhängige UI-Seiten
 - `data/`: lokale Notizen, Aufgaben und Bibliotheksdateien
 - `data/library/`: lokale `.txt`- und `.md`-Dokumente
+- `data/zim/`: lokale, von Git ausgeschlossene ZIM-Datei
 
 Notes werden unter `data/notes/` als `YYYYMMDD_HHMMSS.md` gespeichert. Der
 Eintrag `+ New note` fragt Titel und Text über die aktive Eingabequelle ab;
@@ -131,26 +135,43 @@ gespeicherten Befehle zur erneuten Ausführung aus. Die History-Datei unter
 
 ## Library
 
-Die Library beginnt mit einer Auswahl der verfügbaren Quellen. `Local files`
-zeigt unterstützte Dateien und Unterordner unter `data/library/`. `.txt`- und
-`.md`-Dateien werden als reiner UTF-8-Text geöffnet, auf Displaybreite
-umgebrochen und mit `w`/`s` beziehungsweise den Pfeiltasten seitenweise
-gelesen. `b`, `Esc` oder Pfeil links führt von der Datei in den Ordner, vom
-Unterordner in den übergeordneten Ordner, vom Stamm zur Quellenauswahl und von
-dort ins Hauptmenü. Andere Dateitypen und symbolische Links werden nicht
-geöffnet.
+Die Library beginnt mit der Quellenauswahl `Local files`, `Wikipedia`, `Search`
+und `Back`. `Local files` zeigt unterstützte Dateien und Unterordner unter
+`data/library/`. `.txt`- und `.md`-Dateien werden als reiner UTF-8-Text
+geöffnet, auf Displaybreite umgebrochen und mit `w`/`s` beziehungsweise den
+Pfeiltasten seitenweise gelesen. Andere Dateitypen und symbolische Links werden
+nicht geöffnet.
+
+`Wikipedia` verwendet ausschließlich den lokalen Kiwix-Server unter
+`http://127.0.0.1:8080`. Beim Öffnen prüft der Provider zuerst, ob dort bereits
+ein Server läuft. Andernfalls startet er `/usr/bin/kiwix-serve` mit der in
+`config.py` festgelegten ZIM. Ein von der App gestarteter Prozess wird beim
+Beenden wieder gestoppt; ein zuvor extern gestarteter Server bleibt
+unangetastet.
+
+Im Wikipedia-Menü öffnet `Search` eine Eingabe direkt auf dem Display. CardKB
+liefert einzelne Zeichen, während die CLI eine vollständige Suchzeile annimmt.
+Treffer werden auf 30 begrenzt. Artikel-HTML wird mit der Python-
+Standardbibliothek in Klartext aus Überschriften, Absätzen und Listen
+umgewandelt; Skripte, Styles und Navigationsbereiche werden verworfen. Artikel
+nutzen dieselbe Textumbruch- und Paging-Ansicht wie lokale Dokumente.
+
+`b`, `Esc` oder Pfeil links führt vom Artikel zu den Suchergebnissen, von den
+Ergebnissen zur Suchzeile, von dort zum Wikipedia-Menü und weiter zur
+Quellenauswahl. Der globale Eintrag `Search` in der Quellenauswahl bleibt für
+eine spätere Suche über mehrere Provider reserviert und ist noch ohne Funktion.
 
 Die Library-Seite arbeitet nur mit gemeinsamen `LibraryItem`- und
 `LibraryDocument`-Modellen. Dateizugriffe und Pfadprüfungen bleiben vollständig
-im `LocalLibraryProvider`. Ein `SearchResult`-Modell und die provider-neutrale
-`search()`-Schnittstelle sind vorbereitet; der sichtbare Eintrag `Search` ist
-in dieser Version ausdrücklich noch ohne Suchfunktion.
+im `LocalLibraryProvider`. Das gemeinsame `SearchResult`-Modell hält auch die
+Wikipedia-Suche provider-neutral. Die Darstellung kennt weder ZIM-Dateien noch
+HTTP- oder Kiwix-Aufrufe. Python lädt die ZIM nicht selbst und erstellt weder
+Index noch Datenbank; Suche und Zugriff auf genau eine ZIM bleiben vollständig
+bei `kiwix-serve`.
 
-Ein späterer Kiwix-Provider kann dieselbe Provider-Schnittstelle implementieren
-und in `app.py` beim `LibraryProviderRegistry` registriert werden. Er liefert
-dann eigene Item-IDs und ein gemeinsames `LibraryDocument`; die Darstellung
-muss weder ZIM-Dateien noch Kiwix-Aufrufe kennen. Diese Version enthält keine
-Kiwix-Abhängigkeit, keine ZIM-Verarbeitung und keine Volltextindizierung.
+Die `.gitignore` schließt `data/zim/*.zim` ausdrücklich aus. Dadurch wird die
+große Wikipedia-Datei nicht in Git aufgenommen; nur `data/zim/.gitkeep` wird
+versioniert.
 
 ## Tools
 

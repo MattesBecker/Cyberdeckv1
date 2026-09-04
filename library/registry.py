@@ -1,6 +1,10 @@
+import logging
 from typing import Iterable, Tuple
 
 from .base import LibraryProvider, LibraryProviderError
+
+
+logger = logging.getLogger(__name__)
 
 
 class LibraryProviderRegistry:
@@ -30,3 +34,15 @@ class LibraryProviderRegistry:
             raise LibraryProviderError(
                 "Unknown library provider: {0}".format(provider_key)
             ) from exc
+
+    def close(self) -> None:
+        """Close all providers without preventing the remaining cleanup."""
+        for provider in self._providers.values():
+            try:
+                provider.close()
+            except Exception as exc:
+                logger.warning(
+                    "Could not close library provider %s: %s",
+                    provider.key,
+                    exc,
+                )

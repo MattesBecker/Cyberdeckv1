@@ -4,6 +4,8 @@ from typing import List, Mapping, Optional
 
 ITEM_TYPE_DIRECTORY = "directory"
 ITEM_TYPE_DOCUMENT = "document"
+ITEM_TYPE_SEARCH = "search"
+ITEM_TYPE_BACK = "back"
 
 
 class LibraryProviderError(RuntimeError):
@@ -44,6 +46,7 @@ class LibraryProvider:
     key = ""
     title = ""
     supports_search = False
+    search_title = "SEARCH"
 
     def list_items(self, container_id: str = "") -> List[LibraryItem]:
         raise NotImplementedError
@@ -58,3 +61,7 @@ class LibraryProvider:
 
     def get_title(self, item_id: str) -> str:
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Release resources owned by this provider, if any."""
+        pass

@@ -9,6 +9,8 @@ data/notes/*
 !data/notes/.gitkeep
 data/library/*
 !data/library/.gitkeep
+data/zim/*.zim
+!data/zim/.gitkeep
 data/tasks.json*
 data/.tasks.*.tmp
 data/terminal_history.txt

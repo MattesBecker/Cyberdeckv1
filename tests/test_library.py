@@ -3,12 +3,24 @@ import unittest
 from pathlib import Path
 
 from library import (
+    ITEM_TYPE_BACK,
     ITEM_TYPE_DIRECTORY,
     ITEM_TYPE_DOCUMENT,
+    ITEM_TYPE_SEARCH,
+    LibraryDocument,
+    LibraryItem,
+    LibraryProvider,
     LibraryProviderError,
     LibraryProviderRegistry,
     LocalLibraryProvider,
     SearchResult,
+)
+from input_common import (
+    EVENT_CHARACTER,
+    EVENT_ENTER,
+    EVENT_ESCAPE,
+    EVENT_TEXT,
+    InputEvent,
 )
 from pages.library import LibraryPage
 
@@ -26,6 +38,56 @@ class FakeDisplay:
     def wrap_text(self, text):
         self.wrap_count += 1
         return text.splitlines() or [""]
+
+
+class FakeWikipediaProvider(LibraryProvider):
+    key = "kiwix"
+    title = "Wikipedia"
+    supports_search = True
+    search_title = "SEARCH WIKI"
+
+    def __init__(self, results=None):
+        self.queries = []
+        self.opened_ids = []
+        self.results = results
+
+    def list_items(self, container_id=""):
+        return [
+            LibraryItem(self.key, "search", "Search", ITEM_TYPE_SEARCH),
+            LibraryItem(self.key, "back", "Back", ITEM_TYPE_BACK),
+        ]
+
+    def search(self, query):
+        self.queries.append(query)
+        if self.results is not None:
+            return self.results
+        return [
+            SearchResult(
+                self.key,
+                "/content/wikipedia/Raspberry_Pi",
+                "Raspberry Pi",
+                "",
+            ),
+            SearchResult(
+                self.key,
+                "/content/wikipedia/Banana_Pi",
+                "Banana Pi",
+                "",
+            ),
+        ]
+
+    def open_item(self, item_id):
+        self.opened_ids.append(item_id)
+        return LibraryDocument(
+            self.key,
+            item_id,
+            "Raspberry Pi",
+            "line 1\nline 2\nline 3\nline 4",
+            item_id,
+        )
+
+    def get_title(self, item_id):
+        return item_id.rsplit("/", 1)[-1].replace("_", " ")
 
 
 class LocalLibraryProviderTest(unittest.TestCase):
@@ -263,6 +325,103 @@ class LibraryPageTest(unittest.TestCase):
         self.assertEqual(self.page.mode, self.page.MESSAGE_MODE)
         self.page.render(self.display)
         self.assertIn("Unknown", " ".join(self.display.last[1]))
+
+
+class WikipediaLibraryPageTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        local = LocalLibraryProvider(
+            Path(self.temporary_directory.name) / "library"
+        )
+        self.wikipedia = FakeWikipediaProvider()
+        providers = LibraryProviderRegistry((local, self.wikipedia))
+        self.page = LibraryPage(providers)
+        self.display = FakeDisplay(body_line_count=3)
+
+    def _open_wikipedia_search(self):
+        self.page.open_library()
+        self.assertTrue(self.page.move_down())
+        self.assertEqual(self.page.select(), "changed")
+        self.assertEqual(self.page.mode, self.page.BROWSE_MODE)
+        self.assertEqual(self.page.select(), "changed")
+        self.assertEqual(self.page.mode, self.page.SEARCH_MODE)
+
+    def test_provider_selection_shows_wikipedia_search_and_back(self):
+        self.page.open_library()
+        self.page.move_down()
+
+        self.assertEqual(self.page.select(), "changed")
+        self.page.render(self.display)
+
+        self.assertEqual(self.display.last[0], "Wikipedia")
+        self.assertEqual(self.display.last[1], ["> Search", "  Back"])
+
+    def test_cardkb_text_search_results_article_and_back_navigation(self):
+        self._open_wikipedia_search()
+
+        for character in "Raspberry Pi":
+            action = self.page.handle_event(
+                InputEvent(EVENT_CHARACTER, character=character)
+            )
+            self.assertEqual(action, "changed")
+        self.page.render(self.display)
+        self.assertEqual(self.display.last[0], "SEARCH WIKI")
+        self.assertIn("Raspberry Pi_", " ".join(self.display.last[1]))
+
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_ENTER)), "changed"
+        )
+        self.assertEqual(self.wikipedia.queries, ["Raspberry Pi"])
+        self.assertEqual(self.page.mode, self.page.RESULTS_MODE)
+        self.page.render(self.display)
+        self.assertEqual(self.display.last[0], "RESULTS")
+        self.assertEqual(self.display.last[1][0], "> Raspberry Pi")
+
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_ENTER)), "opened"
+        )
+        self.assertEqual(self.page.mode, self.page.DOCUMENT_MODE)
+        self.page.render(self.display)
+        self.assertEqual(self.display.last[0], "Raspberry Pi")
+        self.assertTrue(self.page.move_down())
+        self.assertTrue(self.page.back())
+        self.assertEqual(self.page.mode, self.page.RESULTS_MODE)
+        self.assertTrue(self.page.back())
+        self.assertEqual(self.page.mode, self.page.SEARCH_MODE)
+        self.assertTrue(self.page.back())
+        self.assertEqual(self.page.mode, self.page.BROWSE_MODE)
+
+    def test_cli_text_event_runs_search(self):
+        self._open_wikipedia_search()
+
+        action = self.page.handle_event(
+            InputEvent(EVENT_TEXT, character="Raspberry Pi")
+        )
+
+        self.assertEqual(action, "changed")
+        self.assertEqual(self.wikipedia.queries, ["Raspberry Pi"])
+        self.assertEqual(self.page.mode, self.page.RESULTS_MODE)
+
+    def test_no_results_message_returns_to_search(self):
+        self.wikipedia.results = []
+        self._open_wikipedia_search()
+
+        self.page.handle_event(InputEvent(EVENT_TEXT, character="missing"))
+
+        self.assertEqual(self.page.mode, self.page.MESSAGE_MODE)
+        self.page.render(self.display)
+        self.assertEqual(self.display.last[1], ["No results"])
+        self.assertTrue(self.page.back())
+        self.assertEqual(self.page.mode, self.page.SEARCH_MODE)
+
+    def test_escape_returns_from_search_to_wikipedia_menu(self):
+        self._open_wikipedia_search()
+
+        self.assertEqual(
+            self.page.handle_event(InputEvent(EVENT_ESCAPE)), "changed"
+        )
+        self.assertEqual(self.page.mode, self.page.BROWSE_MODE)
 
 
 if __name__ == "__main__":
